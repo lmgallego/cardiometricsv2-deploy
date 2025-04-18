@@ -25,6 +25,7 @@
       <HFPower :device=device />
       <LFHFRatio :device=device />
       <StressDisplay :device=device />
+      <EnergyDisplay :device=device />
 
       <HeartRateChart :device=device />
 
