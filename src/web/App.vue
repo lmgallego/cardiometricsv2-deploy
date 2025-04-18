@@ -14,11 +14,14 @@
 
     <div v-if="device" class="space-y-4">
       <div class="flex flex-col md:flex-row md:space-x-4 space-y-4 md:space-y-0">
-        <div class="w-full md:w-1/2">
+        <div class="w-full md:w-1/3">
           <StressDisplay :device="device" />
         </div>
-        <div class="w-full md:w-1/2">
+        <div class="w-full md:w-1/3">
           <EnergyDisplay :device="device" />
+        </div>
+        <div class="w-full md:w-1/3">
+          <HealthDisplay :device="device" />
         </div>
       </div>
 
