@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import RmssdCalculator from '../services/RMSSDCalculator.js'
+import RMSSD from '../services/RMSSD.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,7 +23,7 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: RmssdCalculator
+      calculatorClass: RMSSD
     }
   }
 }

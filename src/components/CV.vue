@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import CvCalculator from '../services/CVCalculator.js'
+import CV from '../services/CV.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,7 +23,7 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: CvCalculator
+      calculatorClass: CV
     }
   }
 }

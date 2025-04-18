@@ -46,8 +46,7 @@ export default {
   },
   created() {
     if (!this.calculatorClass) {
-      console.error('RRIntCalculatorMixin requires "calculatorClass" to be defined in the component.')
+      console.error('RRIntMixin requires "calculatorClass" to be defined in the component.')
     }
   },
-}
-
+} 

@@ -1,6 +1,6 @@
-import RRIntCalculator from './RRIntCalculator'
+import RRInt from './RRInt'
 
-export default class SdnnCalculator extends RRIntCalculator {
+export default class SDNN extends RRInt {
   constructor(device, options = {}) {
     super(device, {
       ...options,
@@ -10,8 +10,7 @@ export default class SdnnCalculator extends RRIntCalculator {
   }
 
   calculate() {
-    // Using the shared method from MetricCalculator
+    // Using the shared method from Metric
     return this.calculateStdDev(this.recentRrs)
   }
-}
-
+} 

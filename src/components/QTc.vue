@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import QtcCalculator from '../services/QTcCalculator.js'
+import QTc from '../services/QTc.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,7 +23,7 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: QtcCalculator
+      calculatorClass: QTc
     }
   }
 }

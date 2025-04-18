@@ -1,7 +1,7 @@
 <template>
   <div>
     <MetricDisplay 
-      label="SDNN"
+      label="Total Power (HRV)"
       :value="value"
       :meanValue="meanValue"
       :stdDevValue="stdDevValue"
@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import SDNN from '../services/SDNN.js'
+import TotalPower from '../services/TotalPower.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,12 +23,11 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: SDNN
+      calculatorClass: TotalPower
     }
   }
 }
 </script>
 
 <style scoped>
-</style>
-
+</style> 

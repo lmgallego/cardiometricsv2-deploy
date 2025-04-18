@@ -1,6 +1,6 @@
-import RRIntCalculator from './RRIntCalculator'
+import RRInt from './RRInt'
 
-export default class AMo50Calculator extends RRIntCalculator {
+export default class AMo50 extends RRInt {
   constructor(device, options = {}) {
     super(device, {
       ...options,
@@ -21,5 +21,4 @@ export default class AMo50Calculator extends RRIntCalculator {
 
     return (count / recentRrs.length) * 100
   }
-}
-
+} 

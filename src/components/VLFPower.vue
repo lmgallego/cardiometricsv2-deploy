@@ -1,7 +1,7 @@
 <template>
   <div>
     <MetricDisplay 
-      label="SDNN"
+      label="VLF Power (Long-term Regulation)"
       :value="value"
       :meanValue="meanValue"
       :stdDevValue="stdDevValue"
@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import SDNN from '../services/SDNN.js'
+import VLFPower from '../services/VLFPower.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,12 +23,11 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: SDNN
+      calculatorClass: VLFPower
     }
   }
 }
 </script>
 
 <style scoped>
-</style>
-
+</style> 

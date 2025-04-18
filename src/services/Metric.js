@@ -2,10 +2,10 @@ import { Subject } from 'rxjs'
 import { mean, std, sqrt } from 'mathjs'
 
 /**
- * Base class for all metric calculators.
+ * Base class for all metrics.
  * Provides common functionality for calculating and emitting metrics.
  */
-export default class MetricCalculator {
+export default class Metric {
   constructor(device, options = {}) {
     this.device = device
     this.options = options

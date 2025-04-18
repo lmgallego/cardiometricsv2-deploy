@@ -1,7 +1,7 @@
 <template>
   <div>
     <MetricDisplay 
-      label="SDNN"
+      label="LF Power (Sympathetic)"
       :value="value"
       :meanValue="meanValue"
       :stdDevValue="stdDevValue"
@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import SDNN from '../services/SDNN.js'
+import LFPower from '../services/LFPower.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,12 +23,11 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: SDNN
+      calculatorClass: LFPower
     }
   }
 }
 </script>
 
 <style scoped>
-</style>
-
+</style> 

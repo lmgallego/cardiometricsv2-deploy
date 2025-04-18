@@ -1,6 +1,6 @@
-import MetricCalculator from './MetricCalculator'
+import Metric from './Metric'
 
-export default class RRIntCalculator extends MetricCalculator {
+export default class RRInt extends Metric {
   constructor(device, options = {}) {
     super(device, {
       ...options,
@@ -41,5 +41,4 @@ export default class RRIntCalculator extends MetricCalculator {
     throw new Error('calculate() must be implemented by subclass')
     return 0
   }
-}
-
+} 

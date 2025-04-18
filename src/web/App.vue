@@ -18,6 +18,12 @@
       <AMo50 :device=device />
       <CV :device=device />
       <QTc :device=device />
+      
+      <TotalPower :device=device />
+      <VLFPower :device=device />
+      <LFPower :device=device />
+      <HFPower :device=device />
+      <LFHFRatio :device=device />
 
       <HeartRateChart :device=device />
 
@@ -33,10 +39,14 @@ import log from '@/log.js'
 
 import {PairService, ConnectService} from '../web_bluetooth.js'
 import QTc from '../components/QTc.vue'
+import VLFPower from '../components/VLFPower.vue'
+import TotalPower from '../components/TotalPower.vue'
 
 export default {
   components: {
-    QTc
+    QTc,
+    VLFPower,
+    TotalPower
   },
 
   data() {

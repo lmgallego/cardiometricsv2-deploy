@@ -1,7 +1,7 @@
 <template>
   <div>
     <MetricDisplay 
-      label="SDNN"
+      label="Stress Index (Sympathetic Balance %)"
       :value="value"
       :meanValue="meanValue"
       :stdDevValue="stdDevValue"
@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import SDNN from '../services/SDNN.js'
+import LFHFRatio from '../services/LFHFRatio.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,12 +23,11 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: SDNN
+      calculatorClass: LFHFRatio
     }
   }
 }
 </script>
 
 <style scoped>
-</style>
-
+</style> 

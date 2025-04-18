@@ -1,6 +1,6 @@
-import RRIntCalculatorMixin from './RRIntCalculatorMixin.js'
+import RRIntMixin from './RRIntMixin.js'
 import MetricHistoryMixin from './MetricHistoryMixin.js'
 
 export default {
-  mixins: [RRIntCalculatorMixin, MetricHistoryMixin]
+  mixins: [RRIntMixin, MetricHistoryMixin]
 }

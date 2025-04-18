@@ -1,6 +1,6 @@
-import RRIntCalculator from './RRIntCalculator'
+import RRInt from './RRInt'
 
-export default class MxdmnCalculator extends RRIntCalculator {
+export default class MxDMn extends RRInt {
   constructor(device, options = {}) {
     super(device, {
       ...options,
@@ -20,5 +20,4 @@ export default class MxdmnCalculator extends RRIntCalculator {
     const deviations = recentRrs.map(rri => Math.abs(rri - mean))
     return deviations.reduce((acc, val) => acc + val, 0) / deviations.length
   }
-}
-
+} 

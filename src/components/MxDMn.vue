@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import MxdmnCalculator from '../services/MxDMnCalculator.js'
+import MxDMn from '../services/MxDMn.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,7 +23,7 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: MxdmnCalculator
+      calculatorClass: MxDMn
     }
   }
 }

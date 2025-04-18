@@ -1,8 +1,8 @@
-import MetricCalculator from './MetricCalculator'
+import Metric from './Metric'
 import { sqrt, median, mean, quantileSeq } from 'mathjs'
 import EcgService from './Ecg.js'
 
-export default class QtcCalculator extends MetricCalculator {
+export default class QTc extends Metric {
   constructor(device, options = {}) {
     super(device, {
       ...options,

@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import pNN50Calculator from '../services/pNN50Calculator.js'
+import PNN50 from '../services/pNN50.js'
 import MetricMixin from '../mixins/MetricMixin.js'
 import MetricDisplay from './MetricDisplay.vue'
 
@@ -23,7 +23,7 @@ export default {
   mixins: [MetricMixin],
   data() {
     return {
-      calculatorClass: pNN50Calculator
+      calculatorClass: PNN50
     }
   }
 }
