@@ -35,17 +35,17 @@ export default class EcgService {
       // Subscribe to the device's ECG observable
       this.deviceSubscription = this.device
         .observeEcg()
-        .subscribe(ecgData => this.handleEcgData(ecgData))
+        .subscribe(data => this.handleData(data))
     } else {
       console.error('Device does not support ECG functionality')
     }
   }
   
-  handleEcgData(ecgData) {
-    if (!ecgData || ecgData.length === 0) return
+  handleData(data) {
+    if (!data || data.length === 0) return
     
     // Add new samples to the array
-    this.ecgSamples.push(...ecgData)
+    this.ecgSamples.push(...data)
     
     // Generate corresponding time values
     const timeStep = 1 / this.samplingRate
@@ -53,13 +53,13 @@ export default class EcgService {
       this.ecgTimes[this.ecgTimes.length - 1] : 0
     
     const newTimes = []
-    for (let i = 0; i < ecgData.length; i++) {
+    for (let i = 0; i < data.length; i++) {
       newTimes.push(lastTime + timeStep * (i + 1))
     }
     this.ecgTimes.push(...newTimes)
     
     // Process and normalize new ECG data
-    const normalizedData = this.normalizeEcgData(ecgData)
+    const normalizedData = this.normalizeData(data)
     this.normalizedEcg.push(...normalizedData)
     
     // Limit the size of the arrays
@@ -72,15 +72,15 @@ export default class EcgService {
     
     // Emit the raw ECG data to subscribers
     this.ecgSubject.next({
-      samples: ecgData,
+      samples: data,
       times: newTimes
     })
     
     // Process ECG for Q and T points
-    this.processEcgForQT()
+    this.processForQT()
   }
   
-  normalizeEcgData(rawData) {
+  normalizeData(rawData) {
     // Apply a combination of filtering techniques to reduce noise
     
     // 1. Moving average filter to smooth the signal
@@ -151,7 +151,7 @@ export default class EcgService {
     return data.map((value, i) => value - baseline[i])
   }
   
-  processEcgForQT() {
+  processForQT() {
     if (this.normalizedEcg.length < 200) return
     
     // Get a window of the most recent ECG samples for analysis
@@ -644,14 +644,65 @@ export default class EcgService {
    * @returns {Observable} Observable that emits {qtInterval, qPointIndex, tEndIndex, qPointTime, tEndTime} objects.
    */
   getQtIntervalObservable() {
-    return this.qtIntervalSubject.asObservable().pipe(share())
+    return this.qtIntervalSubject.asObservable()
+  }
+  
+  /**
+   * Returns an Observable that emits RR intervals calculated from ECG data
+   * @returns {Observable} - RR interval observable (in milliseconds)
+   */
+  getRRIntervals() {
+    return new Observable(observer => {
+      // Use the R peaks observable as the source
+      const subscription = this.rPeakSubject.subscribe(rPeak => {
+        // We need at least 2 consecutive R peaks to calculate an RR interval
+        if (this.lastRPeakTime !== undefined) {
+          const rrInterval = (rPeak.time - this.lastRPeakTime) * 1000 // Convert to milliseconds
+          
+          // Filter out implausible values (same range as in RRInt.validateRrInterval)
+          if (rrInterval >= 300 && rrInterval <= 2000) {
+            observer.next(rrInterval)
+          }
+        }
+        
+        // Store the current R peak time for the next calculation
+        this.lastRPeakTime = rPeak.time
+      })
+      
+      // Cleanup function
+      return () => subscription.unsubscribe()
+    }).pipe(share()) // Share the observable among multiple subscribers
+  }
+  
+  /**
+   * Get the latest RR intervals calculated from ECG data
+   * @param {number} count - Number of RR intervals to return
+   * @returns {Array} - Array of RR intervals in milliseconds
+   */
+  getLatestRRIntervals(count = 30) {
+    if (!this.rrIntervals) {
+      this.rrIntervals = []
+      
+      // Subscribe to RR intervals and store them
+      this.rrIntervalsSubscription = this.getRRIntervals().subscribe(rrInterval => {
+        this.rrIntervals.push(rrInterval)
+        
+        // Limit the size of the array
+        if (this.rrIntervals.length > 100) { // Store the last 100 intervals
+          this.rrIntervals.shift()
+        }
+      })
+    }
+    
+    // Return the latest RR intervals
+    return this.rrIntervals.slice(-count)
   }
   
   /**
    * Get current ECG data and time arrays.
    * @returns {Object} Object containing ecgSamples and ecgTimes arrays.
    */
-  getCurrentEcgData() {
+  getCurrentData() {
     return {
       samples: [...this.ecgSamples],
       times: [...this.ecgTimes]
@@ -662,15 +713,29 @@ export default class EcgService {
    * Clean up resources when no longer needed.
    */
   destroy() {
+    // Unsubscribe from device
     if (this.deviceSubscription) {
       this.deviceSubscription.unsubscribe()
       this.deviceSubscription = null
     }
     
+    // Unsubscribe from RR intervals
+    if (this.rrIntervalsSubscription) {
+      this.rrIntervalsSubscription.unsubscribe()
+      this.rrIntervalsSubscription = null
+    }
+    
+    // Clear subjects
     this.ecgSubject.complete()
     this.rPeakSubject.complete()
     this.qPointSubject.complete()
     this.tEndSubject.complete()
     this.qtIntervalSubject.complete()
+    
+    // Clear data
+    this.ecgSamples = []
+    this.ecgTimes = []
+    this.normalizedEcg = []
+    this.rrIntervals = []
   }
 } 

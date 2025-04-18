@@ -1,7 +1,7 @@
 <template>
   <div>
     <MetricDisplay 
-      label="Stress Index (Sympathetic Balance %)"
+      label="LF/HF Ratio"
       :value="value"
       :meanValue="meanValue"
       :stdDevValue="stdDevValue"
@@ -14,12 +14,8 @@
 <script>
 import LFHFRatio from '../services/LFHFRatio.js'
 import MetricMixin from '../mixins/MetricMixin.js'
-import MetricDisplay from './MetricDisplay.vue'
 
 export default {
-  components: {
-    MetricDisplay
-  },
   mixins: [MetricMixin],
   data() {
     return {

@@ -38,7 +38,14 @@ export default class Metric {
    */
   unsubscribe() {
     if (this.subscription) {
-      this.subscription.unsubscribe()
+      try {
+        // Check if unsubscribe is a function before calling it
+        if (typeof this.subscription.unsubscribe === 'function') {
+          this.subscription.unsubscribe()
+        }
+      } catch (e) {
+        console.warn('Error unsubscribing metric:', e.message)
+      }
       this.subscription = null
       this.isSubscribed = false
     }
@@ -48,8 +55,16 @@ export default class Metric {
    * Clean up resources.
    */
   destroy() {
-    this.unsubscribe()
-    this.valueSubject.complete()
+    try {
+      this.unsubscribe()
+      
+      // Only complete the subject if it exists and hasn't been completed
+      if (this.valueSubject && !this.valueSubject.closed) {
+        this.valueSubject.complete()
+      }
+    } catch (e) {
+      console.warn('Error destroying metric:', e.message)
+    }
   }
 
   /**

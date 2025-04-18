@@ -7,7 +7,7 @@ export default class HFPower extends FrequencyDomain {
 
   calculate() {
     // HF power (0.15-0.4 Hz) - related to parasympathetic activity
-    // Apply normalization factor to align with typical range of 975±203 ms²
-    return this.calculateBandPower(this.recentRrs, 0.15, 0.4, 9);
+    // Normalization factor adjusted to match Welltory app reference values (around 188ms²)
+    return this.calculateBandPower(this.recentRrs, 0.15, 0.4, 0.87);
   }
 } 

@@ -1,9 +1,9 @@
 <template>
   <div id=app >
-    <button v-if=!device @click=pair >Pair & Connect</button>
+    <button v-if=!device @click=pairAndConnect>Pair & Connect</button>
     <div v-else >
       Connected to {{device.name()}}
-      <button @click=disconnect >Disconnect</button>
+      <button @click=disconnectDevice>Disconnect</button>
     </div>
 
     <div v-if=device>
@@ -24,6 +24,7 @@
       <LFPower :device=device />
       <HFPower :device=device />
       <LFHFRatio :device=device />
+      <StressDisplay :device=device />
 
       <HeartRateChart :device=device />
 
@@ -36,48 +37,19 @@
 
 <script>
 import log from '@/log.js'
-
-import {PairService, ConnectService} from '../web_bluetooth.js'
-import QTc from '../components/QTc.vue'
-import VLFPower from '../components/VLFPower.vue'
-import TotalPower from '../components/TotalPower.vue'
+import BluetoothDeviceMixin from '../mixins/BluetoothDeviceMixin'
 
 export default {
-  components: {
-    QTc,
-    VLFPower,
-    TotalPower
-  },
-
-  data() {
-    return {
-      pairedDevice: null,
-      device:       null,
-    }
-  },
   name: 'WebApp',
-
-  async mounted() {
-  },
-
-  methods: {
-
-    async pair() {
-      this.pairedDevice = await (new PairService).pair()
-      await this.connect()
-    },
-
-    async connect() {
-      this.device = await (new ConnectService).connect(this.pairedDevice)
-      log.debug('App: got device', this.device)
-      this.device.onDisconnect(_ => this.device = null)
-    },
-
-    disconnect() {
-      this.device.disconnect()
-    },
-
-    
+  mixins: [BluetoothDeviceMixin],
+  
+  // Support for HMR
+  beforeCreate() {
+    if (import.meta.hot) {
+      import.meta.hot.accept(() => {
+        log.debug('App.vue: HMR triggered')
+      })
+    }
   }
 }
 </script>
