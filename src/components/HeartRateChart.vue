@@ -1,6 +1,6 @@
 <template>
   <CardWrapper title="Heart Rate Over Time">
-    <div ref="chart" style="width: 100%; height: 400px;"></div>
+    <div ref="chart" style="width: 100%; min-height: 400px;"></div>
   </CardWrapper>
 </template>
 
@@ -8,6 +8,8 @@
 import Plotly from 'plotly.js-dist-min' // Ensure Plotly is installed via npm or yarn
 import CardWrapper from './CardWrapper.vue'
 import themeManager from '../services/ThemeManager.js'
+import { opts } from '../services/store.js'
+import { computed, watch, ref } from 'vue'
 
 export default {
   name: 'HeartRateChart',
@@ -20,25 +22,65 @@ export default {
       required: true
     }
   },
+  setup(props) {
+    // References
+    const chart = ref(null);
+    const plotInitialized = ref(false);
+    
+    // Computed property for dynamic history interval
+    const historyInterval = computed(() => opts.historyInterval);
+    
+    // Computed property for max data points based on interval and sampling rate
+    const maxDataPoints = computed(() => {
+      // Assume typical heart rate sensor samples at 1Hz (1 sample per second)
+      // Double for safety to ensure we don't run out of points
+      return historyInterval.value * 2;
+    });
+    
+    // Watch for changes in history interval
+    watch(historyInterval, (newInterval) => {
+      if (plotInitialized.value && chart.value) {
+        // Update the x-axis range
+        Plotly.relayout(chart.value, {
+          'xaxis.range': [0, newInterval]
+        });
+        
+        console.log(`Heart rate chart display interval updated to ${newInterval} seconds`);
+      }
+    });
+    
+    return {
+      chart,
+      plotInitialized,
+      historyInterval,
+      maxDataPoints
+    };
+  },
   data() {
     return {
       heartRateData: [],
       timeData: [],
       startTime: null,
-      plotInitialized: false,
       layout: {
         title: '',
-        margin: { t: 10, r: 10, b: 50, l: 50 },
+        autosize: true,
+        margin: { t: 5, r: 5, b: 30, l: 40 },
         xaxis: {
           title: 'Time (s)',
-          range: [0, 300],
-          showgrid: false,
+          automargin: true,
+          range: [0, this.historyInterval],
+          showgrid: true,
+          gridcolor: this.getGridColor(),
+          gridwidth: this.getGridWidth(),
           color: this.getTextColor()
         },
         yaxis: {
           title: 'Heart Rate (bpm)',
+          automargin: true,
           range: [50, 220],
-          showgrid: false,
+          showgrid: true,
+          gridcolor: this.getGridColor(),
+          gridwidth: this.getGridWidth(),
           color: this.getTextColor()
         },
         paper_bgcolor: 'rgba(0,0,0,0)',
@@ -133,7 +175,10 @@ export default {
             showarrow: false,
             font: { color: this.getTextColor(), size: 12 }
           }
-        ]
+        ],
+        legend: {
+          orientation: 'h'
+        }
       },
       plotData: [
         {
@@ -166,11 +211,23 @@ export default {
       return themeManager.isDarkTheme() ? '#FFFFFF' : '#333333'
     },
     
+    getGridColor() {
+      return themeManager.isDarkTheme() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
+    },
+    
+    getGridWidth() {
+      return themeManager.isDarkTheme() ? 0.5 : 1
+    },
+    
     updateTheme() {
       // Update colors for dark/light theme
       this.layout.font.color = this.getTextColor()
       this.layout.xaxis.color = this.getTextColor()
       this.layout.yaxis.color = this.getTextColor()
+      this.layout.xaxis.gridcolor = this.getGridColor()
+      this.layout.yaxis.gridcolor = this.getGridColor()
+      this.layout.xaxis.gridwidth = this.getGridWidth()
+      this.layout.yaxis.gridwidth = this.getGridWidth()
       
       // Update annotation colors
       this.layout.annotations.forEach(annotation => {
@@ -196,8 +253,8 @@ export default {
       this.heartRateData.push(hr)
       this.timeData.push(elapsedTime)
 
-      // Keep only the last 300 seconds of data
-      while (this.timeData.length > 300) {
+      // Keep only enough data points for the current history interval
+      while (this.timeData.length > this.maxDataPoints) {
         this.timeData.shift()
         this.heartRateData.shift()
       }
@@ -210,9 +267,9 @@ export default {
       this.plotData[1].x = [elapsedTime]
       this.plotData[1].y = [hr]
 
-      // Adjust x-axis range to show the latest 300 seconds
-      const xMin = Math.max(0, elapsedTime - 300)
-      const xMax = xMin + 300
+      // Adjust x-axis range to show the latest history interval
+      const xMin = Math.max(0, elapsedTime - this.historyInterval)
+      const xMax = xMin + this.historyInterval
       this.layout.xaxis.range = [xMin, xMax]
 
       // Redraw the plot if initialized
@@ -242,7 +299,7 @@ export default {
       this.plotData[0].y = []
       this.plotData[1].x = []
       this.plotData[1].y = []
-      this.layout.xaxis.range = [0, 300]
+      this.layout.xaxis.range = [0, this.historyInterval]
 
       if (this.plotInitialized) {
         Plotly.react(this.$refs.chart, this.plotData, this.layout, this.config)
@@ -264,6 +321,9 @@ export default {
     }
   },
   mounted() {
+    // Store reference to the chart element
+    this.chart = this.$refs.chart;
+    
     // If device is already provided at mount
     if (this.device) {
       this.initializePlot()
@@ -296,6 +356,6 @@ export default {
 /* Optional: Customize the plot container */
 div {
   width: 100%;
-  height: 400px;
+  /* height: 400px; <-- Removed fixed height */
 }
 </style>

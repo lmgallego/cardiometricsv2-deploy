@@ -14,10 +14,17 @@ import { reactive } from 'vue'
  * - 'bazett': Traditional Bazett's formula (QTc = QT/√RR)
  * - 'fridericia': Fridericia's formula (QTc = QT/∛RR), less heart rate dependent
  * - Fridericia is generally more accurate across different heart rates
+ *
+ * historyInterval: Time window in seconds for chart history display
+ * - Controls how much historical data is displayed in charts
+ * - Lower values (30-60) provide more detailed view of recent data
+ * - Higher values (120-300) show longer-term trends
+ * - Default: 30 seconds for optimal visualization
  */
 export const opts = reactive({
   rrIntervals: 60, // Number of R-R intervals for calculations
   qtcFormula: 'fridericia', // Formula for QTc calculation (bazett or fridericia)
+  historyInterval: 30, // History time window in seconds (default: 30s)
 })
 
 /**

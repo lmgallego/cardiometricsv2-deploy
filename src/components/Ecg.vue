@@ -1,6 +1,6 @@
 <template>
   <CardWrapper title="ECG Waveform">
-    <div ref="ecgChart" style="width: 100%; height: 400px;"></div>
+    <div ref="ecgChart" style="width: 100%; min-height: 400px;"></div>
   </CardWrapper>
 </template>
 
@@ -10,17 +10,58 @@ import Plotly from 'plotly.js-dist-min'
 import EcgService from '../services/Ecg.js'
 import CardWrapper from './CardWrapper.vue'
 import themeManager from '../services/ThemeManager.js'
+import { opts } from '../services/store.js'
+import { computed, watch, ref, onMounted, onBeforeUnmount } from 'vue'
 
 export default {
   components: {
     CardWrapper
   },
+  props: ['device'],
+  
+  setup(props) {
+    // References
+    const ecgChart = ref(null);
+    const plotInitialized = ref(false);
+    
+    // Computed property for dynamic history interval
+    const historyInterval = computed(() => opts.historyInterval);
+    
+    // Computed property for max data points based on interval and sampling rate
+    const maxDataPoints = computed(() => {
+      // Assuming ECG typically samples at around 250Hz
+      // Calculate points needed for the history interval
+      const typicalSamplingRate = 250; // Hz
+      return historyInterval.value * typicalSamplingRate;
+    });
+    
+    // Watch for changes in history interval
+    watch(historyInterval, (newInterval) => {
+      if (plotInitialized.value && ecgChart.value) {
+        // Update the x-axis range to reflect new interval
+        // Keep the range fixed starting from 0
+        const displayInterval = Math.max(0.1, newInterval);
+        Plotly.relayout(ecgChart.value, {
+          'xaxis.range': [0, displayInterval]
+        });
+        
+        console.log(`ECG chart display interval updated to ${newInterval} seconds`);
+      }
+    });
+    
+    return {
+      ecgChart,
+      plotInitialized,
+      historyInterval,
+      maxDataPoints
+    };
+  },
+  
   data() {
     return {
       ecgData: [],
       ecgTime: [],
-      plotInitialized: false,
-      maxPoints: 1000, // Maximum number of points to display
+      maxPoints: 3000, // This will be overridden by computed maxDataPoints
       updateInterval: 200, // Chart update interval in milliseconds
       ecgService: null,
       ecgSubscription: null,
@@ -31,10 +72,11 @@ export default {
       qPoints: [], // For visualization
       tEndPoints: [], // For visualization
       updateTimer: null, // Timer for scheduled chart updates
-      themeListener: null // For theme changes
+      themeListener: null, // For theme changes
+      initialTimestamp: null, // To track start time for relative time
+      displayDuration: 60 // Default display window - will use historyInterval from store
     }
   },
-  props: ['device'],
 
   watch: {
     device: {
@@ -71,6 +113,9 @@ export default {
   },
 
   mounted() {
+    // Store reference to chart
+    this.ecgChart = this.$refs.ecgChart;
+    
     this.initializePlot();
     // Start the timer to update the chart at regular intervals
     this.updateTimer = setInterval(this.updatePlot, this.updateInterval);
@@ -99,6 +144,14 @@ export default {
       return themeManager.isDarkTheme() ? '#FFFFFF' : '#333333';
     },
     
+    getGridColor() {
+      return themeManager.isDarkTheme() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+    },
+    
+    getGridWidth() {
+      return themeManager.isDarkTheme() ? 0.5 : 1;
+    },
+    
     updateTheme() {
       if (!this.plotInitialized || !this.$refs.ecgChart) return;
       
@@ -107,7 +160,11 @@ export default {
         'yaxis.color': this.getTextColor(),
         'font.color': this.getTextColor(),
         'paper_bgcolor': 'rgba(0,0,0,0)',
-        'plot_bgcolor': 'rgba(0,0,0,0)'
+        'plot_bgcolor': 'rgba(0,0,0,0)',
+        'xaxis.gridcolor': this.getGridColor(),
+        'yaxis.gridcolor': this.getGridColor(),
+        'xaxis.gridwidth': this.getGridWidth(),
+        'yaxis.gridwidth': this.getGridWidth()
       };
       
       Plotly.relayout(this.$refs.ecgChart, update);
@@ -150,13 +207,26 @@ export default {
     },
     
     handleEcgData(data) {
+      // Initialize time tracking if needed
+      if (!this.initialTimestamp && data.times && data.times.length > 0) {
+        this.initialTimestamp = Date.now() / 1000; // Current time in seconds
+      }
+      
       // Add new samples to the arrays
       this.ecgData.push(...data.samples);
-      this.ecgTime.push(...data.times);
       
-      // Limit the length of the data arrays to maxPoints
-      if (this.ecgData.length > this.maxPoints) {
-        const removeCount = this.ecgData.length - this.maxPoints;
+      // Calculate times relative to our window
+      const newTimes = [];
+      for (let i = 0; i < data.times.length; i++) {
+        const relativeTime = data.times[i];
+        newTimes.push(relativeTime);
+      }
+      this.ecgTime.push(...newTimes);
+      
+      // Limit to max points based on history interval
+      const maxPointsToKeep = this.maxDataPoints;
+      if (this.ecgData.length > maxPointsToKeep) {
+        const removeCount = this.ecgData.length - maxPointsToKeep;
         this.ecgData.splice(0, removeCount);
         this.ecgTime.splice(0, removeCount);
         
@@ -169,6 +239,12 @@ export default {
         
         this.tEndPoints = this.tEndPoints.filter(point => point.index >= removeCount)
           .map(point => ({ ...point, index: point.index - removeCount }));
+      }
+      
+      // Log data size periodically for debugging
+      if (this.ecgData.length % 500 === 0) {
+        console.log(`ECG data points: ${this.ecgData.length}, time range: ${this.ecgTime[0]} to ${this.ecgTime[this.ecgTime.length-1]}`);
+        console.log(`Current history interval: ${this.historyInterval}s, max points: ${maxPointsToKeep}`);
       }
     },
     
@@ -262,18 +338,25 @@ export default {
       
       const layout = {
         title: '',
-        margin: { t: 10, r: 10, b: 50, l: 50 },
+        autosize: true,
+        margin: { t: 5, r: 5, b: 30, l: 40 },
         xaxis: {
           title: 'Time (s)',
-          range: [0, 5], // Initial range
+          automargin: true,
+          range: [0, Math.max(0.1, this.historyInterval)],
           showgrid: true,
           zeroline: false,
+          gridcolor: this.getGridColor(),
+          gridwidth: this.getGridWidth(),
           color: this.getTextColor()
         },
         yaxis: {
           title: 'Amplitude (µV)',
+          automargin: true,
           showgrid: true,
           zeroline: false,
+          gridcolor: this.getGridColor(),
+          gridwidth: this.getGridWidth(),
           color: this.getTextColor()
         },
         legend: {
@@ -293,35 +376,28 @@ export default {
     updatePlot() {
       if (!this.plotInitialized || !this.$refs.ecgChart || this.ecgData.length === 0) return;
       
-      const update = {
-        x: [this.ecgTime, [], [], []],
-        y: [this.ecgData, [], [], []]
+      const latestTime = this.ecgTime[this.ecgTime.length - 1];
+      const displayInterval = Math.max(0.1, this.historyInterval);
+      const windowStartTime = Math.max(0, latestTime - displayInterval);
+
+      // Adjust times to be relative to the start of the current display window
+      const plotEcgTime = this.ecgTime.map(t => t - windowStartTime);
+      const plotRPeakTimes = this.rPeaks.map(p => p.time - windowStartTime);
+      const plotQPointTimes = this.qPoints.map(p => p.time - windowStartTime);
+      const plotTEndTimes = this.tEndPoints.map(p => p.time - windowStartTime);
+      
+      const updateData = {
+        x: [plotEcgTime, plotRPeakTimes, plotQPointTimes, plotTEndTimes],
+        y: [
+          this.ecgData,
+          this.rPeaks.map(p => p.value),
+          this.qPoints.map(p => p.value),
+          this.tEndPoints.map(p => p.value)
+        ]
       };
       
-      // Add R peaks
-      update.x[1] = this.rPeaks.map(p => p.time);
-      update.y[1] = this.rPeaks.map(p => p.value);
-      
-      // Add Q points
-      update.x[2] = this.qPoints.map(p => p.time);
-      update.y[2] = this.qPoints.map(p => p.value);
-      
-      // Add T-end points
-      update.x[3] = this.tEndPoints.map(p => p.time);
-      update.y[3] = this.tEndPoints.map(p => p.value);
-      
-      // Update x-axis range to show the latest 5 seconds of data
-      if (this.ecgTime.length > 0) {
-        const latestTime = this.ecgTime[this.ecgTime.length - 1];
-        const xMin = Math.max(0, latestTime - 5);
-        const xMax = latestTime;
-        
-        Plotly.relayout(this.$refs.ecgChart, {
-          'xaxis.range': [xMin, xMax]
-        });
-      }
-      
-      Plotly.update(this.$refs.ecgChart, update, {});
+      // Update only the data, keeping the layout (and fixed axis range) unchanged
+      Plotly.update(this.$refs.ecgChart, updateData, {});
     }
   }
 }

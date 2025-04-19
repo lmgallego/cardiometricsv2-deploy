@@ -33,9 +33,12 @@
         <QTc :device="device" />
       </div>
 
+      <!-- Chart history control -->
+      <HistoryIntervalControl />
+
       <HeartRateChart :device="device" class="w-full" />
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 gap-4">
         <Ecg :device="device" />
         <Accelerometer :device="device" />
       </div>
@@ -49,6 +52,7 @@ import BluetoothDeviceMixin from '../mixins/BluetoothDeviceMixin'
 import FrequencyAnalysis from '../components/FrequencyAnalysis.vue'
 import HRVDisplay from '../components/HRVDisplay.vue'
 import ThemeToggle from '../components/ThemeToggle.vue'
+import HistoryIntervalControl from '../components/HistoryIntervalControl.vue'
 
 export default {
   name: 'WebApp',
@@ -56,7 +60,8 @@ export default {
   components: {
     FrequencyAnalysis,
     HRVDisplay,
-    ThemeToggle
+    ThemeToggle,
+    HistoryIntervalControl
   },
   
   // Support for HMR
