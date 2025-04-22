@@ -287,10 +287,17 @@ export default {
       // Aggregation interval
       aggregationInterval: 0.2, // seconds
       // Median line controls
-      medianWindowSeconds: 0.3,
+      medianWindowSeconds: 0.2,
       xMedianPaths: [],
       yMedianPaths: [],
-      zMedianPaths: []
+      zMedianPaths: [],
+      // Store precomputed median values and last processed time
+      lastProcessedMedianTime: 0,
+      medianValueCache: {
+        x: new Map(), // Maps time window start to median value
+        y: new Map(),
+        z: new Map()
+      }
     }
   },
   
@@ -318,93 +325,100 @@ export default {
         return;
       }
       
-      // Get the batch of data to process
-      const dataToProcess = [...this.accData];
-      this.accData = []; // Clear buffer for next batch
-      
-      if (Array.isArray(dataToProcess) && dataToProcess.length > 0) {
-        // Set up time tracking if not already done
-        if (!this.startTime) {
-          this.startTime = Date.now();
-          console.log('Accelerometer tracking started at:', new Date(this.startTime).toISOString());
-        }
+      try {
+        // Get the batch of data to process
+        const dataToProcess = [...this.accData];
+        this.accData = []; // Clear buffer for next batch
         
-        const rawXData = [];
-        const rawYData = [];
-        const rawZData = [];
-        const rawTimeData = [];
-        
-        // Process each reading in the batch: scale and calculate time
-        dataToProcess.forEach((reading) => {
-          if (!reading || typeof reading !== 'object' || !('x' in reading) || !('y' in reading) || !('z' in reading)) {
-            return; // Skip invalid readings
+        if (Array.isArray(dataToProcess) && dataToProcess.length > 0) {
+          // Set up time tracking if not already done
+          if (!this.startTime) {
+            this.startTime = Date.now();
+            console.log('Accelerometer tracking started at:', new Date(this.startTime).toISOString());
           }
           
-          // Scale the values
-          let x = reading.x * this.scaleFactor;
-          let y = reading.y * this.scaleFactor;
-          let z = reading.z * this.scaleFactor;
+          const rawXData = [];
+          const rawYData = [];
+          const rawZData = [];
+          const rawTimeData = [];
           
-          // Calculate time relative to start
-          const now = Date.now(); // Use timestamp of processing
-          const elapsedSeconds = (now - this.startTime) / 1000;
+          // Process each reading in the batch: scale and calculate time
+          dataToProcess.forEach((reading) => {
+            if (!reading || typeof reading !== 'object' || !('x' in reading) || !('y' in reading) || !('z' in reading)) {
+              return; // Skip invalid readings
+            }
+            
+            // Scale the values
+            let x = reading.x * this.scaleFactor;
+            let y = reading.y * this.scaleFactor;
+            let z = reading.z * this.scaleFactor;
+            
+            // Calculate time relative to start
+            const now = Date.now(); // Use timestamp of processing
+            const elapsedSeconds = (now - this.startTime) / 1000;
+            
+            // Apply baseline normalization if available
+            if (this.baselineValues) {
+              x -= this.baselineValues.x;
+              y -= this.baselineValues.y;
+              z -= this.baselineValues.z;
+            }
+            
+            // Store raw (scaled, baselined) data with timestamps
+            rawTimeData.push(elapsedSeconds);
+            rawXData.push(x);
+            rawYData.push(y);
+            rawZData.push(z);
+            
+            this.sampleIndex++;
+          });
           
-          // Apply baseline normalization if available
-          if (this.baselineValues) {
-            x -= this.baselineValues.x;
-            y -= this.baselineValues.y;
-            z -= this.baselineValues.z;
+          // Update the last time we received data
+          this.lastDataTime = Date.now();
+          
+          // Try to calculate baseline values if we don't have them yet (using raw scaled data count)
+          if (!this.baselineValues && this.sampleIndex >= this.calibrationCount) {
+            // Note: Baseline calc now uses raw scaled data before potential aggregation
+            this.calculateBaseline(); // Recalculate baseline using all data so far
           }
           
-          // Store raw (scaled, baselined) data with timestamps
-          rawTimeData.push(elapsedSeconds);
-          rawXData.push(x);
-          rawYData.push(y);
-          rawZData.push(z);
+          // Step 1: Aggregate data into fixed time intervals
+          const { aggregatedTimes, aggregatedX, aggregatedY, aggregatedZ } = this.aggregateDataByInterval(
+            rawTimeData, rawXData, rawYData, rawZData, this.aggregationInterval
+          );
           
-          this.sampleIndex++;
-        });
-        
-        // Try to calculate baseline values if we don't have them yet (using raw scaled data count)
-        if (!this.baselineValues && this.sampleIndex >= this.calibrationCount) {
-          // Note: Baseline calc now uses raw scaled data before potential aggregation
-          this.calculateBaseline(); // Recalculate baseline using all data so far
-        }
-        
-        // Step 1: Aggregate data into fixed time intervals
-        const { aggregatedTimes, aggregatedX, aggregatedY, aggregatedZ } = this.aggregateDataByInterval(
-          rawTimeData, rawXData, rawYData, rawZData, this.aggregationInterval
-        );
-        
-        // If aggregation produced no points, stop here
-        if (aggregatedTimes.length === 0) {
-            return;
-        }
+          // If aggregation produced no points, stop here
+          if (aggregatedTimes.length === 0) {
+              return;
+          }
 
-        // Step 2: Remove outliers from aggregated data
-        const cleanedXData = this.removeOutliers(aggregatedX);
-        const cleanedYData = this.removeOutliers(aggregatedY);
-        const cleanedZData = this.removeOutliers(aggregatedZ);
-        
-        // Add aggregated, cleaned data to main arrays
-        this.timeData.push(...aggregatedTimes);
-        this.axData.push(...cleanedXData);
-        this.ayData.push(...cleanedYData);
-        this.azData.push(...cleanedZData);
-        
-        // Debug info occasionally
-        if (this.sampleIndex % 100 < dataToProcess.length) { // Log roughly every 100 samples
-          console.log(`Accelerometer: ${this.timeData.length} aggregated points processed.`);
+          // Step 2: Remove outliers from aggregated data
+          const cleanedXData = this.removeOutliers(aggregatedX);
+          const cleanedYData = this.removeOutliers(aggregatedY);
+          const cleanedZData = this.removeOutliers(aggregatedZ);
+          
+          // Add aggregated, cleaned data to main arrays
+          this.timeData.push(...aggregatedTimes);
+          this.axData.push(...cleanedXData);
+          this.ayData.push(...cleanedYData);
+          this.azData.push(...cleanedZData);
+          
+          // Debug info occasionally
+          if (this.sampleIndex % 100 < dataToProcess.length) { // Log roughly every 100 samples
+            console.log(`Accelerometer: ${this.timeData.length} aggregated points processed.`);
+          }
+          
+          // Update the Y range based on the newly added aggregated data
+          this.updateYRange();
+          
+          // Update median lines
+          this.updateMedianLines();
+          
+          // Prune old data outside our history window
+          this.pruneOldData();
         }
-        
-        // Update the Y range based on the newly added aggregated data
-        this.updateYRange();
-        
-        // Update median lines
-        this.updateMedianLines();
-        
-        // Prune old data outside our history window
-        this.pruneOldData();
+      } catch (error) {
+        console.error('Error processing accelerometer data:', error);
       }
     },
 
@@ -556,80 +570,159 @@ export default {
       this.xMedianPaths = [];
       this.yMedianPaths = [];
       this.zMedianPaths = [];
+      
+      // Reset median caches
+      this.lastProcessedMedianTime = 0;
+      this.medianValueCache = {
+        x: new Map(),
+        y: new Map(),
+        z: new Map()
+      };
     },
     
     // Update median lines for all axes
     updateMedianLines() {
       if (this.timeData.length < 2) return;
       
-      this.xMedianPaths = this.calculateMedianLinePaths('x');
-      this.yMedianPaths = this.calculateMedianLinePaths('y');
-      this.zMedianPaths = this.calculateMedianLinePaths('z');
+      try {
+        // Find the latest time
+        const latestTime = this.timeData[this.timeData.length - 1];
+        
+        // Skip only if EXACTLY the same timestamp (avoid floating point comparison issues)
+        if (latestTime === this.lastProcessedMedianTime) return;
+        
+        // Only process new data windows
+        this.incrementalUpdateMedianPaths('x');
+        this.incrementalUpdateMedianPaths('y');
+        this.incrementalUpdateMedianPaths('z');
+        
+        // Update the last processed time
+        this.lastProcessedMedianTime = latestTime;
+      } catch (error) {
+        console.error('Error updating median lines:', error);
+        // Don't update lastProcessedMedianTime on error so we'll try again
+      }
     },
     
-    // Calculate median line path for a specific axis
-    calculateMedianLinePaths(axis) {
-      const timeWindow = this.medianWindowSeconds;
-      const dataArray = axis === 'x' ? this.axData : 
-                        axis === 'y' ? this.ayData : this.azData;
-      
-      if (dataArray.length < 2 || this.timeData.length < 2) return [];
-      
-      // Find the latest time
-      const latestTime = this.timeData[this.timeData.length - 1];
-      
-      // Calculate median paths for time windows
-      const paths = [];
-      let currentPath = '';
-      
-      // We'll create median paths for sliding windows
-      for (let windowStart = Math.max(0, latestTime - this.historyInterval); 
-           windowStart <= latestTime - timeWindow; 
-           windowStart += timeWindow) {
+    // Incrementally update median paths for an axis
+    incrementalUpdateMedianPaths(axis) {
+      try {
+        const timeWindow = this.medianWindowSeconds;
+        const dataArray = axis === 'x' ? this.axData : 
+                         axis === 'y' ? this.ayData : this.azData;
         
-        const windowEnd = windowStart + timeWindow;
-        const pointsInWindow = { values: [], times: [] };
+        if (dataArray.length < 2 || this.timeData.length < 2) return;
         
-        // Find all points in this time window
-        for (let i = 0; i < this.timeData.length; i++) {
-          const time = this.timeData[i];
-          if (time >= windowStart && time <= windowEnd) {
-            const value = dataArray[i];
-            if (typeof value === 'number' && !isNaN(value)) {
-              pointsInWindow.values.push(value);
-              pointsInWindow.times.push(time);
+        // Find the latest time and the time to start processing from
+        const latestTime = this.timeData[this.timeData.length - 1];
+        const medianCache = this.medianValueCache[axis];
+        
+        // Calculate the oldest time we need to keep in our display
+        const oldestTimeToKeep = Math.max(0, latestTime - this.historyInterval);
+        
+        // Clean up old cache entries that are outside our time window
+        const windowsToRemove = [];
+        medianCache.forEach((value, windowStart) => {
+          if (windowStart < oldestTimeToKeep) {
+            windowsToRemove.push(windowStart);
+          }
+        });
+        windowsToRemove.forEach(window => medianCache.delete(window));
+        
+        // Ensure we have all windows covered within our visible range
+        // This more robust approach ensures no gaps
+        for (let windowStart = oldestTimeToKeep; 
+             windowStart <= latestTime - timeWindow; 
+             windowStart += timeWindow) {
+          
+          // Skip if we already have this window calculated
+          if (medianCache.has(windowStart)) continue;
+          
+          const windowEnd = windowStart + timeWindow;
+          const pointsInWindow = { values: [], times: [] };
+          
+          // Find all points in this time window
+          for (let i = 0; i < this.timeData.length; i++) {
+            const time = this.timeData[i];
+            if (time >= windowStart && time < windowEnd) {
+              const value = dataArray[i];
+              if (typeof value === 'number' && !isNaN(value)) {
+                pointsInWindow.values.push(value);
+                pointsInWindow.times.push(time);
+              }
+            }
+          }
+          
+          // If we have points in this window, calculate and cache the median
+          if (pointsInWindow.values.length > 0) {
+            const medianValue = this.calculateMedian(pointsInWindow.values);
+            medianCache.set(windowStart, medianValue);
+          } else if (windowStart > oldestTimeToKeep + timeWindow) {
+            // For empty windows (except the first), interpolate between neighbors
+            const prevWindow = windowStart - timeWindow;
+            const nextWindow = windowStart + timeWindow;
+            
+            if (medianCache.has(prevWindow) && 
+                (medianCache.has(nextWindow) || windowStart + timeWindow > latestTime)) {
+              // Use the previous window's value when we don't have a next one yet
+              const medianValue = medianCache.get(prevWindow);
+              medianCache.set(windowStart, medianValue);
             }
           }
         }
         
-        // If we have points in this window, calculate the median
-        if (pointsInWindow.values.length > 0) {
-          const medianValue = this.calculateMedian(pointsInWindow.values);
+        // Always include the most recent partial window using the latest value
+        const lastWindow = Math.floor((latestTime - oldestTimeToKeep) / timeWindow) * timeWindow + oldestTimeToKeep;
+        if (!medianCache.has(lastWindow) && dataArray.length > 0) {
+          const lastValue = dataArray[dataArray.length - 1];
+          if (typeof lastValue === 'number' && !isNaN(lastValue)) {
+            medianCache.set(lastWindow, lastValue);
+          }
+        }
+        
+        // Build path from all valid cached median values within our display window
+        let currentPath = '';
+        
+        // Sort window starts for consistent path building
+        const windowStarts = Array.from(medianCache.keys()).sort((a, b) => a - b);
+        
+        // Filter to only include windows in our visible time frame
+        const visibleWindows = windowStarts.filter(start => start >= oldestTimeToKeep);
+        
+        if (visibleWindows.length > 0) {
+          // Start with a move command to the first point
+          const firstWindow = visibleWindows[0];
+          const firstMedian = medianCache.get(firstWindow);
+          const firstCoord = this.calculateCoords(firstWindow, firstMedian, axis);
+          currentPath = `M${firstCoord}`;
           
-          // Create a path segment for this window
-          const startCoord = this.calculateCoords(windowStart, medianValue, axis);
-          const endCoord = this.calculateCoords(windowEnd, medianValue, axis);
-          
-          // Create a new path if needed
-          if (currentPath === '') {
-            currentPath = `M${startCoord} L${endCoord}`;
-          } else {
-            // Connect to previous segment
+          // Add line segments to each successive point
+          for (let i = 0; i < visibleWindows.length; i++) {
+            const windowStart = visibleWindows[i];
+            const windowEnd = windowStart + timeWindow;
+            const medianValue = medianCache.get(windowStart);
+            
+            // Add points at start and end of window with the same Y value
+            if (i > 0) { // We already added the move command for the first window
+              const startCoord = this.calculateCoords(windowStart, medianValue, axis);
+              currentPath += ` L${startCoord}`;
+            }
+            
+            const endCoord = this.calculateCoords(windowEnd, medianValue, axis);
             currentPath += ` L${endCoord}`;
           }
-        } else if (currentPath !== '') {
-          // If we had a path but now have no points, save it and start a new one
-          paths.push(currentPath);
-          currentPath = '';
         }
+        
+        // Update the path array (replacing the previous one)
+        if (currentPath) {
+          if (axis === 'x') this.xMedianPaths = [currentPath];
+          else if (axis === 'y') this.yMedianPaths = [currentPath];
+          else this.zMedianPaths = [currentPath];
+        }
+      } catch (error) {
+        console.error(`Error updating median path for ${axis} axis:`, error);
+        // On error, don't update the paths to maintain visual continuity
       }
-      
-      // Add the last path if it exists
-      if (currentPath !== '') {
-        paths.push(currentPath);
-      }
-      
-      return paths;
     },
     
     subscribeToAccelerometer() {
@@ -652,14 +745,26 @@ export default {
         // Start update timer for continuous rendering and periodic scale adjustment
         let updateCount = 0;
         this.updateTimer = setInterval(() => {
-          // Force update for smooth continuous animation even when no new data
-          this.$forceUpdate();
-          
-          // Update the Y scale more frequently to ensure it adapts quickly
-          updateCount++;
-          if (updateCount % 2 === 0) {
-            this.updateYRange();
-            this.updateMedianLines();
+          try {
+            // Force update for smooth continuous animation even when no new data
+            this.$forceUpdate();
+            
+            // Always update at least every second even without new data
+            updateCount++;
+            if (updateCount % 2 === 0) {
+              this.updateYRange();
+              this.updateMedianLines();
+            }
+            
+            // Check for stalled updates and force a refresh if needed
+            const now = Date.now();
+            if (this.lastDataTime > 0 && now - this.lastDataTime > 2000) {
+              // More than 2 seconds without new data, ensure we're still rendering properly
+              this.updateMedianLines();
+              this.lastDataTime = now; // Reset timer to avoid constant refreshes
+            }
+          } catch (error) {
+            console.error('Error in update timer:', error);
           }
         }, 50); // 20fps refresh rate
         
@@ -740,6 +845,19 @@ export default {
       this.yMax = this.yMax !== 1 ? 
         this.yMax * (1 - smoothFactor) + (max + padding) * smoothFactor : 
         max + padding;
+    },
+    
+    // When history interval changes, reset median caches
+    resetMedianCaches() {
+      this.lastProcessedMedianTime = 0;
+      this.medianValueCache = {
+        x: new Map(),
+        y: new Map(),
+        z: new Map()
+      };
+      this.xMedianPaths = [];
+      this.yMedianPaths = [];
+      this.zMedianPaths = [];
     }
   },
   
@@ -774,9 +892,9 @@ export default {
     
     // Recompute everything when history interval changes
     historyInterval() {
-      // Update the median lines with new timeframe
+      // Clear median caches when interval changes
+      this.resetMedianCaches();
       this.pruneOldData();
-      this.updateMedianLines();
     }
   },
   
