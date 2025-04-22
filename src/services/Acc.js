@@ -51,25 +51,17 @@ export default class Acc {
   }
   
   initialize() {
-    if (!this.device) {
-      console.error('No device available for Accelerometer service')
+    if (!this.device || typeof this.device.observeAccelerometer !== 'function') {
       return
     }
     
-    if (typeof this.device.observeAccelerometer !== 'function') {
-      console.error('Device does not support observeAccelerometer()')
-      return
-    }
-    
-    console.log('Subscribing to accelerometer data stream...')
     this.resetDataArrays()
     
     try {
       const observable = this.device.observeAccelerometer()
       
       if (!observable || typeof observable.subscribe !== 'function') {
-        console.error('Invalid accelerometer observable returned from device')
-        return
+        return;
       }
       
       this.subscription = observable.subscribe({
@@ -81,8 +73,7 @@ export default class Acc {
           }
           this.processAccelerometerData()
         },
-        error: err => {
-          console.error('Error in accelerometer subscription:', err)
+        error: () => {
           // Try to resubscribe after a delay
           setTimeout(() => this.initialize(), 2000)
         }
@@ -91,13 +82,12 @@ export default class Acc {
       // Set a timer to detect if we're not receiving data
       setTimeout(() => {
         if (this.sampleIndex === 0) {
-          console.warn('No accelerometer data received after 3 seconds')
-          // Try to resubscribe
           this.resubscribe()
         }
       }, 3000)
-    } catch (err) {
-      console.error('Failed to subscribe to accelerometer:', err)
+    } catch {
+      // Silent fail and retry
+      setTimeout(() => this.initialize(), 2000)
     }
   }
   
@@ -148,7 +138,6 @@ export default class Acc {
       // Set up time tracking if not already done
       if (!this.startTime) {
         this.startTime = Date.now()
-        console.log('Accelerometer tracking started at:', new Date(this.startTime).toISOString())
       }
       
       const rawXData = []
@@ -159,7 +148,6 @@ export default class Acc {
       // Process each reading in the batch: scale and calculate time
       dataToProcess.forEach(reading => {
         if (!reading || typeof reading !== 'object' || !('x' in reading) || !('y' in reading) || !('z' in reading)) {
-          console.warn('Invalid accelerometer reading:', reading)
           return // Skip invalid readings
         }
         
@@ -242,18 +230,13 @@ export default class Acc {
         isStabilized: this.isStabilized
       })
       
-      // Debug info occasionally
-      if (this.sampleIndex % 100 < dataToProcess.length) {
-        console.log(`Accelerometer: ${this.timeData.length} aggregated points processed.`)
-      }
-      
       // Calculate and emit median data
       this.updateMedianData()
       
       // Prune old data outside our history window
       this.pruneOldData()
-    } catch (error) {
-      console.error('Error processing accelerometer data:', error)
+    } catch {
+      // Silent fail - data will be processed in next batch
     }
   }
   
@@ -300,25 +283,7 @@ export default class Acc {
       Math.abs(stats.z.max - stats.z.min) < 0.5
     )
     
-    // For debugging
-    if (this.sampleIndex % 100 === 0) {
-      console.log('Stabilization stats:', {
-        stdDevX: stats.x.stdDev.toFixed(3),
-        stdDevY: stats.y.stdDev.toFixed(3), 
-        stdDevZ: stats.z.stdDev.toFixed(3),
-        rangeX: (stats.x.max - stats.x.min).toFixed(3),
-        rangeY: (stats.y.max - stats.y.min).toFixed(3),
-        rangeZ: (stats.z.max - stats.z.min).toFixed(3)
-      })
-    }
-    
-    if (isStable) {
-      console.log('Accelerometer data has stabilized')
-      this.isStabilized = true
-    } else if (this.sampleIndex > 200) {
-      // Force stabilization after a certain number of samples
-      // even if it doesn't perfectly meet our criteria
-      console.log('Forcing accelerometer stabilization after 200 samples')
+    if (isStable || this.sampleIndex > 200) {
       this.isStabilized = true
     }
   }

@@ -30,9 +30,9 @@
               <g v-for="line in horizontalGridLines" :key="`h-${line.y}`">
                 <line x1="0" :x2="chartWidth" 
                       :y1="line.y" :y2="line.y" 
-                      :stroke="gridColor" stroke-width="0.5" stroke-dasharray="3,3" />
-                <text x="30" :y="line.y - 3" 
-                      font-size="8" text-anchor="end" :fill="textColor">
+                      :stroke="themeColors.grid" stroke-width="0.5" stroke-dasharray="3,3" />
+                <text x="30" :y="line.y - 3"
+                      font-size="8" text-anchor="end" :fill="themeColors.text">
                   {{ line.label }}
                 </text>
               </g>
@@ -41,57 +41,40 @@
               <line v-for="line in verticalGridLines" :key="`v-${line.x}`"
                     :x1="line.x" :x2="line.x" 
                     :y1="0" :y2="chartHeight" 
-                    :stroke="gridColor" stroke-width="0.5" stroke-dasharray="3,3" />
-              
-              <!-- Time labels -->
-              <text v-for="line in verticalGridLines" :key="`t-${line.x}`" 
-                    :x="line.x" 
-                    :y="chartHeight - 5" 
-                    font-size="10" 
-                    text-anchor="middle"
-                    :fill="textColor">
-                {{ line.label }}
-              </text>
-              
-              <!-- Center line (zero acceleration) - highlight it more -->
-              <line x1="0" :x2="chartWidth" :y1="chartHeight/2" :y2="chartHeight/2" 
-                    :stroke="zeroLineColor" stroke-width="1" />
+                    :stroke="themeColors.grid" stroke-width="0.5" stroke-dasharray="3,3" />
+             
+             <!-- Time labels -->
+             <text v-for="line in verticalGridLines" :key="`t-${line.x}`"
+                   :x="line.x"
+                   :y="chartHeight - 5"
+                   font-size="10"
+                   text-anchor="middle"
+                   :fill="themeColors.text">
+               {{ line.label }}
+             </text>
+             
+             <!-- Center line (zero acceleration) - highlight it more -->
+             <line x1="0" :x2="chartWidth" :y1="chartHeight/2" :y2="chartHeight/2"
+                   :stroke="themeColors.zeroLine" stroke-width="1" />
             </g>
             
             <!-- Median lines -->
             <g class="median-lines">
-              <!-- X-axis median line -->
-              <path v-for="(path, index) in xMedianPaths" :key="`mx-${index}`"
-                    :d="path"
-                    fill="none" stroke="red" stroke-width="2" stroke-opacity="0.9" />
-              
-              <!-- Y-axis median line -->
-              <path v-for="(path, index) in yMedianPaths" :key="`my-${index}`"
-                    :d="path"
-                    fill="none" stroke="lime" stroke-width="2" stroke-opacity="0.9" />
-              
-              <!-- Z-axis median line -->
-              <path v-for="(path, index) in zMedianPaths" :key="`mz-${index}`"
-                    :d="path"
-                    fill="none" stroke="dodgerblue" stroke-width="2" stroke-opacity="0.9" />
+              <template v-for="(axis, index) in axisConfig" :key="axis.name">
+                <path v-for="(path, pathIndex) in medianPaths[axis.name]" :key="`m${axis.name}-${pathIndex}`"
+                      :d="path"
+                      fill="none" :stroke="axis.color" stroke-width="2" stroke-opacity="0.9" />
+              </template>
             </g>
             
             <!-- Axis labels -->
-            <text x="50" y="15" font-size="12" :fill="textColor">Acceleration (g)</text>
+            <text x="50" y="15" font-size="12" :fill="themeColors.text">Acceleration (g)</text>
             
             <!-- Legend -->
             <g class="chart-legend" transform="translate(120, 15)">
-              <g>
-                <line x1="0" y1="0" x2="15" y2="0" stroke="red" stroke-width="2" stroke-opacity="0.9"/>
-                <text x="20" y="5" font-size="12" :fill="textColor">X</text>
-              </g>
-              <g transform="translate(50, 0)">
-                <line x1="0" y1="0" x2="15" y2="0" stroke="lime" stroke-width="2" stroke-opacity="0.9"/>
-                <text x="20" y="5" font-size="12" :fill="textColor">Y</text>
-              </g>
-              <g transform="translate(100, 0)">
-                <line x1="0" y1="0" x2="15" y2="0" stroke="dodgerblue" stroke-width="2" stroke-opacity="0.9"/>
-                <text x="20" y="5" font-size="12" :fill="textColor">Z</text>
+              <g v-for="(axis, index) in axisConfig" :key="axis.name" :transform="`translate(${index * 50}, 0)`">
+                <line x1="0" y1="0" x2="15" y2="0" :stroke="axis.color" stroke-width="2" stroke-opacity="0.9"/>
+                <text x="20" y="5" font-size="12" :fill="themeColors.text">{{ axis.name.toUpperCase() }}</text>
               </g>
             </g>
           </svg>
@@ -108,12 +91,15 @@ import { opts } from '../services/store.js'
 import Acc from '../services/Acc.js'
 import { computed, watch, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
-// Number of data points per polyline segment
-const BATCH_SIZE = 100;
-// Maximum number of segments to maintain for each axis
-const MAX_SEGMENTS = 1000;
-// Window size for moving average smoothing
-const SMOOTHING_WINDOW = 15;
+// Constants
+const BATCH_SIZE = 100; // Number of data points per polyline segment
+const MAX_SEGMENTS = 1000; // Maximum number of segments to maintain for each axis
+const SMOOTHING_WINDOW = 15; // Window size for moving average smoothing
+const AXIS_CONFIG = [
+  { name: 'x', color: 'red', dataKey: 'axData' },
+  { name: 'y', color: 'lime', dataKey: 'ayData' },
+  { name: 'z', color: 'dodgerblue', dataKey: 'azData' }
+];
 
 export default {
   components: {
@@ -135,82 +121,62 @@ export default {
     // Computed property for dynamic history interval
     const historyInterval = computed(() => opts.historyInterval);
     
-    // Theme-dependent colors
-    const textColor = computed(() => 
-      themeManager.isDarkTheme() ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)'
-    );
+    // Theme-dependent colors using a single computed property
+    const themeColors = computed(() => {
+      const isDark = themeManager.isDarkTheme();
+      return {
+        text: isDark ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)',
+        grid: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+        zeroLine: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'
+      };
+    });
     
-    const gridColor = computed(() => 
-      themeManager.isDarkTheme() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
-    );
-    
-    const zeroLineColor = computed(() => 
-      themeManager.isDarkTheme() ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'
-    );
-    
+    // Helper function to determine grid interval
+    const calculateGridInterval = (range) => {
+      const intervals = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5];
+      return intervals.find(i => range <= i * 5) || Math.ceil(range / 5);
+    };
+
+    // Helper function to determine time step
+    const calculateTimeStep = (interval) => {
+      const steps = [
+        { max: 5, step: 0.5 },
+        { max: 10, step: 1 },
+        { max: 30, step: 5 },
+        { max: 60, step: 10 }
+      ];
+      return steps.find(s => interval <= s.max)?.step || 30;
+    };
+
     // Horizontal grid lines
     const horizontalGridLines = computed(() => {
-      const lines = [];
-      
-      // Create grid lines at nice intervals based on current yMin and yMax
       const range = yMax.value - yMin.value;
+      const interval = calculateGridInterval(range);
+      const value = Math.ceil(yMin.value / interval) * interval;
       
-      // Calculate a nice interval (0.01, 0.02, 0.05, 0.1, 0.2, 0.5) based on range
-      // Use smaller divisions for finer detail when range is small
-      let interval;
-      if (range <= 0.05) interval = 0.01;
-      else if (range <= 0.1) interval = 0.02;
-      else if (range <= 0.2) interval = 0.05;
-      else if (range <= 0.5) interval = 0.1;
-      else if (range <= 1) interval = 0.2;
-      else if (range <= 2) interval = 0.5;
-      else interval = Math.ceil(range / 5);
-      
-      // Find the first grid line above yMin
-      let value = Math.ceil(yMin.value / interval) * interval;
-      
-      // Add grid lines up to yMax
-      while (value <= yMax.value) {
-        const normalizedValue = (value - yMin.value) / (yMax.value - yMin.value);
-        const y = chartHeight.value - (normalizedValue * chartHeight.value);
-        
-        lines.push({ 
-          y, 
-          value, 
-          label: value === 0 ? '0' : value.toFixed(2) 
-        });
-        
-        value += interval;
-      }
-      
-      return lines;
+      return Array.from({ length: Math.ceil((yMax.value - value) / interval) + 1 }, (_, i) => {
+        const val = value + (i * interval);
+        const normalizedValue = (val - yMin.value) / range;
+        return {
+          y: chartHeight.value - (normalizedValue * chartHeight.value),
+          value: val,
+          label: val === 0 ? '0' : val.toFixed(2)
+        };
+      });
     });
     
     // Vertical grid lines
     const verticalGridLines = computed(() => {
-      const lines = [];
       const interval = historyInterval.value;
+      const timeStep = calculateTimeStep(interval);
       
-      // Create grid lines at fixed intervals
-      let timeStep;
-      
-      // Adjust time step based on visible time span for optimal grid density
-      if (interval <= 5) timeStep = 0.5;       // 0.5 second steps for small spans
-      else if (interval <= 10) timeStep = 1;   // 1 second steps
-      else if (interval <= 30) timeStep = 5;   // 5 second steps
-      else if (interval <= 60) timeStep = 10;  // 10 second steps
-      else timeStep = 30;                      // 30 second steps for large spans
-      
-      // Add grid lines at nice intervals
-      for (let t = 0; t <= interval; t += timeStep) {
-        const x = (t / interval) * chartWidth.value;
-        lines.push({
-          x,
+      return Array.from({ length: Math.floor(interval / timeStep) + 1 }, (_, i) => {
+        const t = i * timeStep;
+        return {
+          x: (t / interval) * chartWidth.value,
           label: `${t.toFixed(1)}s`
-        });
-      }
-      
-      return lines;
+        };
+      });
     });
     
     // Resize observer
@@ -263,9 +229,7 @@ export default {
       historyInterval,
       yMin,
       yMax,
-      textColor,
-      gridColor,
-      zeroLineColor,
+      themeColors,
       horizontalGridLines,
       verticalGridLines
     };
@@ -278,14 +242,24 @@ export default {
       ayData: [],
       azData: [],
       medianWindowSeconds: 0.3,
-      xMedianPaths: [],
-      yMedianPaths: [],
-      zMedianPaths: [],
+      medianPaths: { x: [], y: [], z: [] },
       themeListener: null,
       updateTimer: null,
       accService: null,
       isStabilized: false,
       initialViewFixed: false
+    }
+  },
+  
+  computed: {
+    // Configuration for the three axes
+    axisConfig() {
+      return AXIS_CONFIG;
+    },
+    
+    // All acceleration data arrays combined for convenience
+    allAccelerationData() {
+      return [...this.axData, ...this.ayData, ...this.azData];
     }
   },
   
@@ -310,32 +284,30 @@ export default {
     
     updateYRange() {
       // Find min/max values across all axes
-      const allValues = [...this.axData, ...this.ayData, ...this.azData];
-      if (allValues.length === 0) return;
+      if (this.allAccelerationData.length === 0) return;
       
       // Use different approach for initial view vs stable state
       if (!this.isStabilized && !this.initialViewFixed && this.timeData.length > 5) {
         // For non-stabilized data, set a fixed initial range that's reasonable
         // This prevents large initial spikes from skewing the view
         this.initialViewFixed = true;
-        this.yMin = -0.5;
-        this.yMax = 0.5;
-        return;
       }
       
       // Calculate min/max with a sliding window approach for recent data
       const recentWindowSize = 500;
-      const xRecent = this.axData.slice(-recentWindowSize);
-      const yRecent = this.ayData.slice(-recentWindowSize);
-      const zRecent = this.azData.slice(-recentWindowSize);
+      
+      // Get recent data for each axis using a more concise approach
+      const recentData = this.axisConfig.map(axis => 
+        this[axis.dataKey].slice(-recentWindowSize)
+      );
       
       // Get min/max of recent data
-      const recentMin = Math.min(...xRecent, ...yRecent, ...zRecent);
-      const recentMax = Math.max(...xRecent, ...yRecent, ...zRecent);
+      const recentMin = Math.min(...recentData.flat());
+      const recentMax = Math.max(...recentData.flat());
       
       // Get absolute min/max from all data
-      const absoluteMin = Math.min(...allValues);
-      const absoluteMax = Math.max(...allValues);
+      const absoluteMin = Math.min(...this.allAccelerationData);
+      const absoluteMax = Math.max(...this.allAccelerationData);
       
       // Use a weighted approach that favors recent data but considers all-time extremes
       const weightRecent = this.isStabilized ? 0.9 : 0.7; // Lower weight for unstable data
@@ -367,92 +339,94 @@ export default {
     
     // Update the visualization based on median data
     updateMedianPaths(medianData) {
-      if (!medianData || !medianData.times || medianData.times.length < 2) return;
+      if (!medianData?.times?.length || medianData.times.length < 2) return;
       
       try {
-        // Update stabilization state if provided in the data
+        // Update stabilization state if provided
         if (typeof medianData.isStabilized === 'boolean') {
           this.isStabilized = medianData.isStabilized;
         }
         
-        // Process median data for each axis into SVG paths
-        const xPath = this.createPathFromPoints(medianData.times, medianData.x);
-        const yPath = this.createPathFromPoints(medianData.times, medianData.y);
-        const zPath = this.createPathFromPoints(medianData.times, medianData.z);
+        // Create a new medianPaths object with updated paths
+        const newMedianPaths = { ...this.medianPaths };
         
-        this.xMedianPaths = xPath ? [xPath] : [];
-        this.yMedianPaths = yPath ? [yPath] : [];
-        this.zMedianPaths = zPath ? [zPath] : [];
+        // Process median data for all axes using axisConfig
+        this.axisConfig.forEach(axis => {
+          const path = this.createPathFromPoints(medianData.times, medianData[axis.name]);
+          newMedianPaths[axis.name] = path ? [path] : [];
+        });
+        
+        // Update all paths at once
+        this.medianPaths = newMedianPaths;
       } catch (error) {
-        console.error('Error updating median paths:', error);
+        // Silently handle errors in path updates
+        this.medianPaths = { x: [], y: [], z: [] };
       }
     },
     
-    // Create SVG path from time series data
+    // Create SVG path from time series data using modern array methods
     createPathFromPoints(times, values) {
-      if (!times || !values || times.length === 0 || values.length === 0) return null;
+      if (!times?.length || !values?.length) return null;
       
-      // Start the path
-      let path = '';
-      let isFirstPoint = true;
-      
-      for (let i = 0; i < times.length; i++) {
-        const time = times[i];
+      const points = times.reduce((acc, time, i) => {
         const value = values[i];
-        
-        if (typeof value !== 'number' || isNaN(value)) continue;
-        
-        const coords = this.calculateCoords(time, value);
-        
-        // Either move to first point or draw line to subsequent points
-        if (isFirstPoint) {
-          path = `M${coords}`;
-          isFirstPoint = false;
-        } else {
-          path += ` L${coords}`;
+        if (typeof value === 'number' && !isNaN(value)) {
+          const coords = this.calculateCoords(time, value);
+          acc.push(acc.length === 0 ? `M${coords}` : `L${coords}`);
         }
+        return acc;
+      }, []);
+      
+      return points.length > 0 ? points.join(' ') : null;
+    },
+    
+    // Cleanup resources
+    cleanup() {
+      if (this.accService) {
+        this.accService.destroy();
+        this.accService = null;
       }
       
-      return path.length > 0 ? path : null;
+      if (this.updateTimer) {
+        clearInterval(this.updateTimer);
+        this.updateTimer = null;
+      }
     },
     
     // Create a new AccService and subscribe to its events
     initializeAccService() {
-      if (this.accService) {
-        this.accService.destroy();
-      }
+      this.cleanup();
       
       if (!this.device) return;
       
       this.accService = new Acc(this.device);
-      
-      // Set the median window seconds from our UI
       this.accService.setMedianWindowSeconds(this.medianWindowSeconds);
       
-      // Subscribe to processed data for updating y-axis range
-      this.accService.getProcessedDataObservable().subscribe(data => {
-        this.timeData = this.accService.timeData;
-        this.axData = this.accService.axData;
-        this.ayData = this.accService.ayData;
-        this.azData = this.accService.azData;
+      // Subscribe to all observables at once
+      const subscriptions = {
+        processed: this.accService.getProcessedDataObservable().subscribe(data => {
+          // Update time data
+          this.timeData = this.accService.timeData;
+          
+          // Update axis data using axisConfig
+          this.axisConfig.forEach(axis => {
+            this[axis.dataKey] = this.accService[axis.dataKey];
+          });
+          
+          // Update stabilization state
+          this.isStabilized = data.isStabilized ?? this.isStabilized;
+          
+          // Update Y range based on new data
+          this.updateYRange();
+        }),
         
-        // Update stabilization state if available
-        if (typeof data.isStabilized === 'boolean') {
-          this.isStabilized = data.isStabilized;
-        }
-        
-        this.updateYRange();
-      });
+        median: this.accService.getMedianDataObservable().subscribe(this.updateMedianPaths)
+      };
       
-      // Subscribe to median data for drawing median lines
-      this.accService.getMedianDataObservable().subscribe(medianData => {
-        this.updateMedianPaths(medianData);
-      });
+      // Start update timer - 20fps
+      this.updateTimer = setInterval(() => this.$forceUpdate(), 50);
       
-      // Start update timer for continuous rendering
-      this.updateTimer = setInterval(() => {
-        this.$forceUpdate();
-      }, 50); // 20fps refresh rate
+      return subscriptions;
     }
   },
   
@@ -460,64 +434,35 @@ export default {
     device: {
       immediate: true,
       handler(newDevice) {
-        if (this.accService) {
-          this.accService.destroy();
-          this.accService = null;
-        }
-        
-        if (this.updateTimer) {
-          clearInterval(this.updateTimer);
-          this.updateTimer = null;
-        }
-        
+        this.cleanup();
         if (newDevice) {
-          this.$nextTick(() => {
-            this.initializeAccService();
-          });
+          this.$nextTick(this.initializeAccService);
         }
       }
     },
     
-    // Update median window size when it changes
     medianWindowSeconds(newValue) {
-      if (this.accService) {
-        this.accService.setMedianWindowSeconds(newValue);
-      }
+      this.accService?.setMedianWindowSeconds(newValue);
     },
     
-    // Recompute when history interval changes
     historyInterval() {
-      // Force an update of the visualization
       this.$forceUpdate();
     }
   },
   
   mounted() {
-    // Initialize the accService if device is already available
     if (this.device) {
       this.initializeAccService();
     }
     
-    // Listen for theme changes
-    this.themeListener = () => {
-      this.$forceUpdate();
-    };
+    this.themeListener = () => this.$forceUpdate();
     themeManager.addListener(this.themeListener);
   },
   
   beforeUnmount() {
-    if (this.accService) {
-      this.accService.destroy();
-      this.accService = null;
-    }
-    
+    this.cleanup();
     if (this.themeListener) {
       themeManager.removeListener(this.themeListener);
-    }
-    
-    if (this.updateTimer) {
-      clearInterval(this.updateTimer);
-      this.updateTimer = null;
     }
   }
 }
@@ -625,4 +570,3 @@ export default {
   position: relative;
 }
 </style>
-
