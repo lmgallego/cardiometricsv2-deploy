@@ -2,10 +2,9 @@
   <CardWrapper title="Accelerometer">
     <div class="accelerometer-container">
       <div class="chart-controls">
-        <div>History ({{ historyInterval }}s)</div>
         <div class="control-buttons">
           <div class="median-control">
-            <span class="control-label">Window: {{ medianWindowSeconds.toFixed(1) }}s</span>
+            <span class="control-label">Median Window: {{ medianWindowSeconds.toFixed(1) }}s</span>
             <input type="range" min="0.1" max="1" step="0.1" v-model.number="medianWindowSeconds" class="slider">
           </div>
         </div>
@@ -284,10 +283,8 @@ export default {
       lastProcessedBatch: { x: [], y: [], z: [], time: [] },
       lastDataTime: 0,
       updateTimer: null,
-      // Aggregation interval
-      aggregationInterval: 0.2, // seconds
-      // Median line controls
-      medianWindowSeconds: 0.2,
+      // Single interval for both aggregation and median window
+      medianWindowSeconds: 0.3,
       xMedianPaths: [],
       yMedianPaths: [],
       zMedianPaths: [],
@@ -383,8 +380,9 @@ export default {
           }
           
           // Step 1: Aggregate data into fixed time intervals
+          // Now use the user-controlled medianWindowSeconds as the aggregation interval
           const { aggregatedTimes, aggregatedX, aggregatedY, aggregatedZ } = this.aggregateDataByInterval(
-            rawTimeData, rawXData, rawYData, rawZData, this.aggregationInterval
+            rawTimeData, rawXData, rawYData, rawZData, this.medianWindowSeconds
           );
           
           // If aggregation produced no points, stop here
@@ -630,10 +628,16 @@ export default {
         windowsToRemove.forEach(window => medianCache.delete(window));
         
         // Ensure we have all windows covered within our visible range
-        // This more robust approach ensures no gaps
-        for (let windowStart = oldestTimeToKeep; 
-             windowStart <= latestTime - timeWindow; 
-             windowStart += timeWindow) {
+        // Create a properly aligned grid of windows
+        const windowStep = timeWindow;
+        const firstWindowStart = Math.floor(oldestTimeToKeep / windowStep) * windowStep;
+        
+        for (let windowStart = firstWindowStart; 
+             windowStart <= latestTime - windowStep; 
+             windowStart += windowStep) {
+          
+          // Skip windows outside our visible range
+          if (windowStart + windowStep < oldestTimeToKeep) continue;
           
           // Skip if we already have this window calculated
           if (medianCache.has(windowStart)) continue;
@@ -662,9 +666,8 @@ export default {
             const prevWindow = windowStart - timeWindow;
             const nextWindow = windowStart + timeWindow;
             
-            if (medianCache.has(prevWindow) && 
-                (medianCache.has(nextWindow) || windowStart + timeWindow > latestTime)) {
-              // Use the previous window's value when we don't have a next one yet
+            if (medianCache.has(prevWindow)) {
+              // Use the previous window's value when we don't have data
               const medianValue = medianCache.get(prevWindow);
               medianCache.set(windowStart, medianValue);
             }
@@ -681,40 +684,56 @@ export default {
         }
         
         // Build path from all valid cached median values within our display window
-        let currentPath = '';
+        // Using a different approach to ensure proper time-ordered rendering
         
-        // Sort window starts for consistent path building
-        const windowStarts = Array.from(medianCache.keys()).sort((a, b) => a - b);
+        // Sort window starts in strict ascending order
+        const windowStarts = Array.from(medianCache.keys())
+          .filter(start => start >= oldestTimeToKeep)
+          .sort((a, b) => a - b);
         
-        // Filter to only include windows in our visible time frame
-        const visibleWindows = windowStarts.filter(start => start >= oldestTimeToKeep);
+        if (windowStarts.length === 0) return;
         
-        if (visibleWindows.length > 0) {
-          // Start with a move command to the first point
-          const firstWindow = visibleWindows[0];
-          const firstMedian = medianCache.get(firstWindow);
-          const firstCoord = this.calculateCoords(firstWindow, firstMedian, axis);
-          currentPath = `M${firstCoord}`;
+        // Create an array of points that will form the path
+        const pathPoints = [];
+        
+        // For each window, add points for the start and end of the window
+        // with the same Y value (creating a step function)
+        for (let i = 0; i < windowStarts.length; i++) {
+          const windowStart = windowStarts[i];
+          const windowEnd = windowStart + timeWindow;
+          const medianValue = medianCache.get(windowStart);
           
-          // Add line segments to each successive point
-          for (let i = 0; i < visibleWindows.length; i++) {
-            const windowStart = visibleWindows[i];
-            const windowEnd = windowStart + timeWindow;
-            const medianValue = medianCache.get(windowStart);
-            
-            // Add points at start and end of window with the same Y value
-            if (i > 0) { // We already added the move command for the first window
-              const startCoord = this.calculateCoords(windowStart, medianValue, axis);
-              currentPath += ` L${startCoord}`;
-            }
-            
-            const endCoord = this.calculateCoords(windowEnd, medianValue, axis);
-            currentPath += ` L${endCoord}`;
+          // Add a point at the start of this window
+          pathPoints.push({
+            time: windowStart,
+            value: medianValue,
+          });
+          
+          // Add a point at the end of this window
+          // (only if it's the last window or there's a different value in the next window)
+          if (i === windowStarts.length - 1 || 
+              medianCache.get(windowStarts[i+1]) !== medianValue) {
+            pathPoints.push({
+              time: windowEnd,
+              value: medianValue,
+            });
           }
         }
         
-        // Update the path array (replacing the previous one)
-        if (currentPath) {
+        // Now create a path by going through the points in strict time order
+        if (pathPoints.length > 0) {
+          // Make sure points are sorted by time (should already be, but just to be safe)
+          pathPoints.sort((a, b) => a.time - b.time);
+          
+          // Start path with a move to the first point
+          let currentPath = `M${this.calculateCoords(pathPoints[0].time, pathPoints[0].value, axis)}`;
+          
+          // Then add line segments to each point
+          for (let i = 1; i < pathPoints.length; i++) {
+            currentPath += ` L${this.calculateCoords(pathPoints[i].time, pathPoints[i].value, axis)}`;
+          }
+          
+          // Update the path array
           if (axis === 'x') this.xMedianPaths = [currentPath];
           else if (axis === 'y') this.yMedianPaths = [currentPath];
           else this.zMedianPaths = [currentPath];
@@ -885,9 +904,16 @@ export default {
       }
     },
     
-    // Update median lines when window size changes
+    // Update median lines AND recalculate data aggregation when window size changes
     medianWindowSeconds() {
-      this.updateMedianLines();
+      // Clear data to force reprocessing with new interval
+      this.resetMedianCaches();
+      
+      // Since we're changing the aggregation interval, we should clear all accumulated data
+      // to avoid mixing differently-aggregated data
+      this.resetDataArrays();
+      
+      // Data will be reprocessed on the next incoming batch with new interval
     },
     
     // Recompute everything when history interval changes
