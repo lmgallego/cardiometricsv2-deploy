@@ -82,6 +82,9 @@ export default class StressIndex extends FrequencyDomain {
     // Calculate LF/HF ratio (basic stress index)
     const lfhfRatio = (lfPower && hfPower) ? (lfPower / hfPower) : 1;
     
+    // Update central metrics store
+    metrics.lfhfRatio = lfhfRatio;
+    
     // Update metric history
     this.updateMetricHistory('lfhf', lfhfRatio);
     this.updateMetricHistory('sdnn', sdnn);

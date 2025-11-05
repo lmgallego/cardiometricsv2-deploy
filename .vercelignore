@@ -1,0 +1,42 @@
+# Vercel ignore file
+# Archivos que no necesitan subirse a Vercel
+
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+.vite
+
+# Environment files
+.env.local
+.env.*.local
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker (no necesario para Vercel)
+Dockerfile
+docker-compose.yml
+nginx.conf
+.dockerignore
+
+# Git
+.git
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage
+.nyc_output
+
+# Cache
+.cache
+.temp

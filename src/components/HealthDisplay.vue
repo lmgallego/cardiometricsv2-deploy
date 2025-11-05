@@ -197,36 +197,36 @@ export default {
     },
     
     insightBackgroundClass() {
-      // Background color for the insights box
+      // Background color for the insights box - with dark mode support
       switch (this.vulnerabilityLevel) {
-        case 0: return 'bg-green-50'
-        case 1: return 'bg-green-50'
-        case 2: return 'bg-yellow-50'
-        case 3: return 'bg-orange-50'
-        case 4: return 'bg-red-50'
-        default: return 'bg-gray-50'
+        case 0: return 'bg-green-100 dark:bg-green-900/30'
+        case 1: return 'bg-blue-100 dark:bg-blue-900/30'
+        case 2: return 'bg-yellow-100 dark:bg-yellow-900/30'
+        case 3: return 'bg-orange-100 dark:bg-orange-900/30'
+        case 4: return 'bg-red-100 dark:bg-red-900/30'
+        default: return 'bg-gray-100 dark:bg-gray-800'
       }
     },
     
     insightTextColorClass() {
       switch (this.vulnerabilityLevel) {
-        case 0: return 'text-green-800 dark:text-green-100'
-        case 1: return 'text-green-800 dark:text-green-100'
-        case 2: return 'text-yellow-800 dark:text-yellow-100'
-        case 3: return 'text-orange-800 dark:text-orange-100'
-        case 4: return 'text-red-800 dark:text-red-100'
-        default: return 'text-gray-800 dark:text-gray-100'
+        case 0: return 'text-green-900 dark:text-green-100'
+        case 1: return 'text-blue-900 dark:text-blue-100'
+        case 2: return 'text-yellow-900 dark:text-yellow-100'
+        case 3: return 'text-orange-900 dark:text-orange-100'
+        case 4: return 'text-red-900 dark:text-red-100'
+        default: return 'text-gray-900 dark:text-gray-100'
       }
     },
 
     accuracyColorClass() {
       switch (this.vulnerabilityLevel) {
-        case 0: return 'text-green-600 dark:text-green-400'
-        case 1: return 'text-green-600 dark:text-green-400'
-        case 2: return 'text-yellow-600 dark:text-yellow-400'
-        case 3: return 'text-orange-600 dark:text-orange-400'
-        case 4: return 'text-red-600 dark:text-red-400'
-        default: return 'text-gray-600 dark:text-gray-400'
+        case 0: return 'text-green-700 dark:text-green-300'
+        case 1: return 'text-blue-700 dark:text-blue-300'
+        case 2: return 'text-yellow-700 dark:text-yellow-300'
+        case 3: return 'text-orange-700 dark:text-orange-300'
+        case 4: return 'text-red-700 dark:text-red-300'
+        default: return 'text-gray-700 dark:text-gray-300'
       }
     },
 

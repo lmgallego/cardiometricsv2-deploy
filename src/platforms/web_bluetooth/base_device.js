@@ -1,6 +1,6 @@
 import { Observable } from 'rxjs'
 import { interval } from 'rxjs'
-import { switchMap, startWith } from 'rxjs/operators'
+import { switchMap, startWith, share } from 'rxjs/operators'
 
 import log from '@/log'
 import Mutex from './mutex'
@@ -29,7 +29,11 @@ export default class BaseDevice {
   }
 
   onDisconnect(handler) {
-    this.connection.device.addEventListener('gattserverdisconnected', handler)
+    if (this.connection && this.connection.device) {
+      this.connection.device.addEventListener('gattserverdisconnected', handler)
+    } else {
+      console.warn('BaseDevice: Cannot set disconnect handler - no connection or device available');
+    }
   }
 
   // Clear cached services and characteristics
@@ -54,9 +58,14 @@ export default class BaseDevice {
   }
 
   async getBatteryLevel() {
-    const charac = await this.fetchCharac('battery_service', 'battery_level')
-    const bl     = await charac.readValue()
-    return bl.getUint8(0)
+    const unlock = await this.mutex.lock()
+    try {
+      const charac = await this.fetchCharac('battery_service', 'battery_level')
+      const bl     = await charac.readValue()
+      return bl.getUint8(0)
+    } finally {
+      unlock()
+    }
   }
 
   observeBatteryLevel(intsecs = 60) {
@@ -67,30 +76,23 @@ export default class BaseDevice {
   }
 
   observeHeartRate() {
-    // Use a fresh observable on each request during development/HMR
-    if (import.meta.env.DEV) {
-      return this.createHeartRateObservable()
-    }
-    
-    // In production, reuse the observable
+    // Always reuse the shared observable to prevent multiple subscriptions
     return this.observes.hrm ||= this.createHeartRateObservable()
   }
   
   createHeartRateObservable() {
+    console.log('Creating Heart Rate Observable')
     return this.observeNotifications('heart_rate', 'heart_rate_measurement', {
       handler: (sub, event) => {
-        sub.next(event.target.value.getUint8(1))
+        const hr = event.target.value.getUint8(1)
+        console.log('Heart Rate received:', hr)
+        sub.next(hr)
       }
-    })
+    }).pipe(share())
   }
 
   observeRRInterval() {
-    // Use a fresh observable on each request during development/HMR
-    if (import.meta.env.DEV) {
-      return this.createRRIntervalObservable()
-    }
-    
-    // In production, reuse the observable
+    // Always reuse the shared observable to prevent multiple subscriptions
     return this.observes.rri ||= this.createRRIntervalObservable()
   }
   
@@ -118,19 +120,39 @@ export default class BaseDevice {
 
         sub.next(rrInterval)
       }
-    })
+    }).pipe(share())
   }
 
   observeNotifications(service, charac, {handler, init}) {
+    console.log(`observeNotifications called for service: ${service}, charac: ${charac}`)
     return new Observable(async sub => {
+      let unlock = null
       try {
+        console.log(`Acquiring mutex lock for ${service}/${charac}`)
+        // Acquire mutex lock to prevent concurrent GATT operations
+        unlock = await this.mutex.lock()
+        console.log(`Mutex acquired for ${service}/${charac}`)
+        
         // Get the characteristic, catching and handling errors
         const characteristic = await this.fetchCharac(service, charac)
+        console.log(`Characteristic fetched for ${service}/${charac}`)
         
-        if (init) await init()
+        if (init) {
+          console.log(`Running init for ${service}/${charac}`)
+          await init()
+        }
         
         // Start notifications
+        console.log(`Starting notifications for ${service}/${charac}`)
         await characteristic.startNotifications()
+        console.log(`Notifications started for ${service}/${charac}`)
+        
+        // Release mutex lock after starting notifications
+        if (unlock) {
+          unlock()
+          unlock = null
+          console.log(`Mutex released for ${service}/${charac}`)
+        }
         
         function handleNotifications(event) { 
           try {
@@ -142,23 +164,30 @@ export default class BaseDevice {
         }
         
         characteristic.addEventListener('characteristicvaluechanged', handleNotifications)
+        console.log(`Event listener added for ${service}/${charac}`)
         
-        // Return cleanup function
-        return () => {
-          try {
-            if (characteristic && characteristic.properties.notify) {
-              // Only call stopNotifications if the characteristic is still available
-              // and has notify property
-              characteristic.stopNotifications()
-                .catch(e => log.debug('Error stopping notifications:', e))
+        // Return cleanup function (teardown logic)
+        return {
+          unsubscribe: () => {
+            try {
+              if (characteristic && characteristic.properties.notify) {
+                // Only call stopNotifications if the characteristic is still available
+                // and has notify property
+                characteristic.stopNotifications()
+                  .catch(e => log.debug('Error stopping notifications:', e))
+              }
+              
+              characteristic.removeEventListener('characteristicvaluechanged', handleNotifications)
+            } catch (e) {
+              log.debug('Error in observable cleanup:', e)
             }
-            
-            characteristic.removeEventListener('characteristicvaluechanged', handleNotifications)
-          } catch (e) {
-            log.debug('Error in observable cleanup:', e)
           }
         }
       } catch (error) {
+        // Release mutex lock if error occurred
+        if (unlock) {
+          unlock()
+        }
         log.debug('Error setting up notifications:', error)
         sub.error(error)
       }

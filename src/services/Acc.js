@@ -28,6 +28,11 @@ export default class Acc {
     this.lastDataTime = 0
     this.medianWindowSeconds = 0.3
     
+    // Retry control
+    this.retryCount = 0
+    this.maxRetries = 3
+    this.isInitializing = false
+    
     // Stabilization tracking
     this.isStabilized = false
     this.stabilizationSamples = 40  // Number of samples to wait before considering data stable
@@ -43,11 +48,12 @@ export default class Acc {
     // Device subscription
     this.subscription = null
     
-    // Auto-start if device provided
-    if (device) {
-      // Wait a brief moment to ensure device is fully initialized
-      setTimeout(() => this.initialize(), 100)
-    }
+    // Auto-start if device provided (TEMPORALLY DISABLED)
+    // Commented to prevent ECG interference
+    // if (device) {
+    //   // Wait a brief moment to ensure device is fully initialized
+    //   setTimeout(() => this.initialize(), 100)
+    // }
   }
   
   initialize() {
@@ -55,17 +61,33 @@ export default class Acc {
       return
     }
     
+    // Prevent multiple simultaneous initializations
+    if (this.isInitializing) {
+      return
+    }
+    
+    // Check retry limit
+    if (this.retryCount >= this.maxRetries) {
+      console.warn('Accelerometer: Max retries reached, stopping attempts')
+      return
+    }
+    
+    this.isInitializing = true
     this.resetDataArrays()
     
     try {
       const observable = this.device.observeAccelerometer()
       
       if (!observable || typeof observable.subscribe !== 'function') {
+        this.isInitializing = false
         return;
       }
       
       this.subscription = observable.subscribe({
         next: accBatch => {
+          // Reset retry count on successful data reception
+          this.retryCount = 0
+          
           if (Array.isArray(accBatch)) {
             this.accData = accBatch
           } else {
@@ -73,35 +95,64 @@ export default class Acc {
           }
           this.processAccelerometerData()
         },
-        error: () => {
-          // Try to resubscribe after a delay
-          setTimeout(() => this.initialize(), 2000)
+        error: (err) => {
+          console.error('Accelerometer subscription error:', err)
+          this.isInitializing = false
+          this.retryCount++
+          
+          // Only retry if under limit
+          if (this.retryCount < this.maxRetries) {
+            setTimeout(() => this.initialize(), 2000)
+          }
         }
       })
       
+      this.isInitializing = false
+      
       // Set a timer to detect if we're not receiving data
       setTimeout(() => {
-        if (this.sampleIndex === 0) {
+        if (this.sampleIndex === 0 && this.retryCount < this.maxRetries) {
           this.resubscribe()
         }
-      }, 3000)
-    } catch {
-      // Silent fail and retry
-      setTimeout(() => this.initialize(), 2000)
+      }, 5000) // Increased timeout to 5 seconds
+    } catch (err) {
+      console.error('Accelerometer initialization error:', err)
+      this.isInitializing = false
+      this.retryCount++
+      
+      // Only retry if under limit
+      if (this.retryCount < this.maxRetries) {
+        setTimeout(() => this.initialize(), 2000)
+      }
     }
   }
   
   // Handle resubscription if needed
   resubscribe() {
+    // Check retry limit
+    if (this.retryCount >= this.maxRetries) {
+      console.warn('Accelerometer: Max retries reached in resubscribe')
+      return
+    }
+    
     console.log('Attempting to resubscribe to accelerometer...')
+    this.retryCount++
     
     if (this.subscription) {
-      this.subscription.unsubscribe()
-      this.subscription = null
+      try {
+        if (typeof this.subscription.unsubscribe === 'function') {
+          this.subscription.unsubscribe()
+        }
+      } catch (e) {
+        // Silently handle unsubscribe errors
+        console.debug('Unsubscribe error (non-critical):', e.message)
+      } finally {
+        this.subscription = null
+      }
     }
     
     // Wait a bit and try again
-    setTimeout(() => this.initialize(), 1000)
+    setTimeout(() => this.initialize(), 2000)
   }
   
   resetDataArrays() {

@@ -2,12 +2,17 @@ import { Subject, BehaviorSubject, Observable } from 'rxjs'
 import { share, map, filter } from 'rxjs/operators'
 import log from '@/log'
 
+// ============================================
+// NEW ECG IMPLEMENTATION (based on cardiometrics)
+// To revert to old version, comment this class and uncomment EcgServiceOld below
+// ============================================
+
 export default class EcgService {
   constructor(device) {
     // Device reference
     this.device = device
     
-    // Data storage
+    // Data storage (ORIGINAL CODE - NOT MODIFIED)
     this.ecgSamples = []
     this.ecgTimes = []
     this.normalizedEcg = [] // Normalized/filtered ECG data for analysis
@@ -34,13 +39,16 @@ export default class EcgService {
   }
   
   initialize() {
+    console.log('EcgService: Initializing...', this.device?.name);
     if (this.device && this.device.observeEcg) {
+      console.log('EcgService: Device has observeEcg method, subscribing...');
       // Subscribe to the device's ECG observable
       this.deviceSubscription = this.device
         .observeEcg()
         .subscribe(data => this.handleData(data))
+      console.log('EcgService: ECG subscription created');
     } else {
-      console.error('Device does not support ECG functionality')
+      console.error('EcgService: Device does not support ECG functionality', this.device);
     }
   }
   

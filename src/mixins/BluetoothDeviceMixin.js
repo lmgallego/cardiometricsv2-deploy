@@ -1,6 +1,7 @@
 import deviceManager from '../services/DeviceManager'
 import log from '@/log'
 import SubscriptionMixin from './SubscriptionMixin'
+import { metrics } from '../services/store.js'
 
 /**
  * Mixin that provides Bluetooth device access to Vue components
@@ -26,6 +27,17 @@ export default {
       device => {
         log.debug('BluetoothDeviceMixin: Device changed')
         this.device = device
+        
+        // Subscribe to heart rate to update central store
+        if (device && device.observeHeartRate) {
+          this.safeSubscribe(
+            'heart-rate-store',
+            device.observeHeartRate(),
+            hr => {
+              metrics.heartRate = hr
+            }
+          )
+        }
       }
     )
     

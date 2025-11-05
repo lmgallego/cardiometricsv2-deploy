@@ -1,8 +1,11 @@
 {
+  "name": "cardiometrics",
+  "version": "1.0.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "serve": "vite preview"
+    "serve": "vite preview",
+    "vercel-build": "vite build"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.2",

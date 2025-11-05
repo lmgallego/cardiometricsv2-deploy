@@ -6,7 +6,7 @@
       <button v-if="!device" @click="pairAndConnect" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
         Pair & Connect
       </button>
-      <div v-else class="flex items-center space-x-4">
+      <div v-else-if="device" class="flex items-center space-x-4">
         <span class="text-lg text-gray-800 dark:text-white">Connected to {{device.name()}}</span>
         <button @click="disconnectDevice" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded">
           Disconnect

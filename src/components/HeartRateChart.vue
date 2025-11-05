@@ -282,9 +282,20 @@ export default {
     },
     
     subscribeToHeartRate() {
+      console.log('HeartRateChart: Attempting to subscribe to heart rate')
+      console.log('Device:', this.device)
+      console.log('Device has observeHeartRate:', this.device && this.device.observeHeartRate)
+      
       if (this.device && this.device.observeHeartRate) {
-        this.subscription = this.device.observeHeartRate().subscribe(hr => {
-          this.updateChart(hr)
+        console.log('HeartRateChart: Subscribing to heart rate observable')
+        this.subscription = this.device.observeHeartRate().subscribe({
+          next: (hr) => {
+            console.log('HeartRateChart: Received HR value:', hr)
+            this.updateChart(hr)
+          },
+          error: (err) => {
+            console.error('HeartRateChart: Error in heart rate subscription:', err)
+          }
         })
       } else {
         console.error('Device does not support observeHeartRate()')
@@ -338,8 +349,13 @@ export default {
   },
   beforeUnmount() {
     if (this.subscription) {
-      this.subscription.unsubscribe()
-      this.subscription = null
+      try {
+        this.subscription.unsubscribe()
+      } catch (e) {
+        console.error('Error unsubscribing from heart rate:', e)
+      } finally {
+        this.subscription = null
+      }
     }
     
     // Remove theme listener
@@ -347,7 +363,14 @@ export default {
       themeManager.removeListener(this.themeListener)
     }
     
-    Plotly.purge(this.$refs.chart)
+    // Safely purge Plotly chart
+    if (this.$refs.chart) {
+      try {
+        Plotly.purge(this.$refs.chart)
+      } catch (e) {
+        console.error('Error purging Plotly chart:', e)
+      }
+    }
   }
 }
 </script>

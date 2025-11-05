@@ -23,6 +23,16 @@ export default class MxDMn extends RRInt {
 
   calculate() {
     // Use the calculateMetric method with our custom calculation function
-    return this.calculateMetric(this.calculateMxDMn, this.recentRrs);
+    const result = this.calculateMetric(this.calculateMxDMn, this.recentRrs);
+    
+    // Debug logging
+    if (this.recentRrs.length > 10 && result === 0) {
+      const max = Math.max(...this.recentRrs);
+      const min = Math.min(...this.recentRrs);
+      console.log(`MxDMn Debug: samples=${this.recentRrs.length}, max=${max}, min=${min}, result=${result}`);
+      console.log(`Sample RR intervals:`, this.recentRrs.slice(0, 10));
+    }
+    
+    return result;
   }
 } 

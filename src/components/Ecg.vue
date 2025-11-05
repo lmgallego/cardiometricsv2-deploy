@@ -84,6 +84,8 @@ const REALTIME_DURATION_SECONDS = 5;
 const APPROX_SAMPLE_RATE = 250; 
 // Define height for history lines
 const HISTORY_LINE_HEIGHT = 80;
+// Maximum number of points to store for markers
+const MAX_POINTS_STORED = 1000;
 
 export default {
   components: {
@@ -140,9 +142,10 @@ export default {
       displayHeight: 350,
       svgHeight: 400,
       showCurrentTimeLine: true,
-      yScale: 0.1,
+      yScale: 0.1,  // Will auto-adjust based on data range
       timeScale: 0.5,
-      amplitudeScale: 0.5
+      amplitudeScale: 0.5,
+      autoScaleEnabled: true
     }
   },
 
@@ -300,33 +303,73 @@ export default {
     
     cleanup() {
       if (this.ecgSubscription) {
-        this.ecgSubscription.unsubscribe();
-        this.ecgSubscription = null;
+        try {
+          if (typeof this.ecgSubscription.unsubscribe === 'function') {
+            this.ecgSubscription.unsubscribe();
+          }
+        } catch (e) {
+          console.debug('ECG unsubscribe error (non-critical):', e.message);
+        } finally {
+          this.ecgSubscription = null;
+        }
       }
       
       if (this.rPeakSubscription) {
-        this.rPeakSubscription.unsubscribe();
-        this.rPeakSubscription = null;
+        try {
+          if (typeof this.rPeakSubscription.unsubscribe === 'function') {
+            this.rPeakSubscription.unsubscribe();
+          }
+        } catch (e) {
+          console.debug('R-Peak unsubscribe error (non-critical):', e.message);
+        } finally {
+          this.rPeakSubscription = null;
+        }
       }
       
       if (this.qPointSubscription) {
-        this.qPointSubscription.unsubscribe();
-        this.qPointSubscription = null;
+        try {
+          if (typeof this.qPointSubscription.unsubscribe === 'function') {
+            this.qPointSubscription.unsubscribe();
+          }
+        } catch (e) {
+          console.debug('Q-Point unsubscribe error (non-critical):', e.message);
+        } finally {
+          this.qPointSubscription = null;
+        }
       }
       
       if (this.tEndSubscription) {
-        this.tEndSubscription.unsubscribe();
-        this.tEndSubscription = null;
+        try {
+          if (typeof this.tEndSubscription.unsubscribe === 'function') {
+            this.tEndSubscription.unsubscribe();
+          }
+        } catch (e) {
+          console.debug('T-End unsubscribe error (non-critical):', e.message);
+        } finally {
+          this.tEndSubscription = null;
+        }
       }
       
       if (this.tPeakSubscription) {
-        this.tPeakSubscription.unsubscribe();
-        this.tPeakSubscription = null;
+        try {
+          if (typeof this.tPeakSubscription.unsubscribe === 'function') {
+            this.tPeakSubscription.unsubscribe();
+          }
+        } catch (e) {
+          console.debug('T-Peak unsubscribe error (non-critical):', e.message);
+        } finally {
+          this.tPeakSubscription = null;
+        }
       }
       
       if (this.ecgService) {
-        this.ecgService.destroy();
-        this.ecgService = null;
+        try {
+          this.ecgService.destroy();
+        } catch (e) {
+          console.debug('ECG service destroy error (non-critical):', e.message);
+        } finally {
+          this.ecgService = null;
+        }
       }
       
       this.ecgData = [];
@@ -385,9 +428,21 @@ export default {
       this.ecgData.push(...data.samples);
       this.ecgTime.push(...data.times);
       
-      // Log data occasionally to help debug history view
-      if (data.times.length > 0 && this.ecgTime.length % 500 === 0) {
-        console.log(`ECG total points: ${this.ecgData.length}, time range: ${this.ecgTime[0]} to ${this.ecgTime[this.ecgTime.length-1]}`);
+      // Auto-adjust yScale based on data range
+      if (this.autoScaleEnabled && this.ecgData.length > 100) {
+        const recentData = this.ecgData.slice(-500); // Last 500 points
+        const min = Math.min(...recentData);
+        const max = Math.max(...recentData);
+        const range = max - min;
+        
+        if (range > 0) {
+          // Target: make the range occupy ~150 pixels
+          const targetPixels = 150;
+          const newScale = targetPixels / range;
+          
+          // Smooth transition - don't change too abruptly
+          this.yScale = this.yScale * 0.9 + newScale * 0.1;
+        }
       }
     },
     
