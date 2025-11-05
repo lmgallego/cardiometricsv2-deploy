@@ -88,6 +88,7 @@
 import CardWrapper from './CardWrapper.vue'
 import themeManager from '../services/ThemeManager.js'
 import { opts } from '../services/store.js'
+import accelerometerManager from '../services/AccelerometerManager.js'
 import Acc from '../services/Acc.js'
 import { computed, watch, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
@@ -401,6 +402,10 @@ export default {
       
       this.accService = new Acc(this.device);
       this.accService.setMedianWindowSeconds(this.medianWindowSeconds);
+      
+      // Register accelerometer service in the manager for ECG motion filtering
+      accelerometerManager.setAccService(this.accService);
+      console.log('Accelerometer: Service registered for motion artifact filtering');
       
       // Subscribe to all observables at once
       const subscriptions = {

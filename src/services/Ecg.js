@@ -1,6 +1,7 @@
 import { Subject, BehaviorSubject, Observable } from 'rxjs'
 import { share, map, filter } from 'rxjs/operators'
 import log from '@/log'
+import AdaptiveLMSFilter from './AdaptiveLMSFilter.js'
 
 // ============================================
 // NEW ECG IMPLEMENTATION (based on cardiometrics)
@@ -8,9 +9,21 @@ import log from '@/log'
 // ============================================
 
 export default class EcgService {
-  constructor(device) {
+  constructor(device, accService = null) {
     // Device reference
     this.device = device
+    
+    // Accelerometer service reference for motion artifact filtering
+    this.accService = accService
+    
+    // Motion artifact filter (LMS adaptive filter)
+    this.motionFilter = new AdaptiveLMSFilter(15, 0.005)
+    this.motionFilterEnabled = true // Can be toggled for comparison
+    
+    // Accelerometer data buffer for synchronization
+    this.accDataBuffer = []
+    this.accTimeBuffer = []
+    this.maxAccBuffer = 500 // Keep last 500 samples (~2.5 seconds at 200Hz)
     
     // Data storage (ORIGINAL CODE - NOT MODIFIED)
     this.ecgSamples = []
@@ -31,6 +44,7 @@ export default class EcgService {
     
     // Device subscription
     this.deviceSubscription = null
+    this.accSubscription = null
     
     // Initialize the service
     this.initialize()
@@ -50,6 +64,43 @@ export default class EcgService {
     } else {
       console.error('EcgService: Device does not support ECG functionality', this.device);
     }
+    
+    // Subscribe to accelerometer if available
+    this.subscribeToAccelerometer()
+  }
+  
+  subscribeToAccelerometer() {
+    if (!this.accService) {
+      console.log('EcgService: No accelerometer service provided, motion filtering disabled');
+      this.motionFilterEnabled = false
+      return
+    }
+    
+    console.log('EcgService: Subscribing to accelerometer for motion artifact filtering...');
+    
+    // Subscribe to processed accelerometer data
+    this.accSubscription = this.accService.processedDataSubject.subscribe(data => {
+      if (!data || !data.samples) return
+      
+      // Store accelerometer data with timestamps for synchronization
+      data.samples.forEach((sample, i) => {
+        this.accDataBuffer.push({
+          x: sample.x,
+          y: sample.y,
+          z: sample.z,
+          magnitude: Math.sqrt(sample.x**2 + sample.y**2 + sample.z**2),
+          time: data.times[i]
+        })
+      })
+      
+      // Limit buffer size
+      if (this.accDataBuffer.length > this.maxAccBuffer) {
+        const excess = this.accDataBuffer.length - this.maxAccBuffer
+        this.accDataBuffer.splice(0, excess)
+      }
+    })
+    
+    console.log('EcgService: Accelerometer subscription created for motion filtering');
   }
   
   handleData(data) {
@@ -69,8 +120,8 @@ export default class EcgService {
     }
     this.ecgTimes.push(...newTimes)
     
-    // Process and normalize new ECG data
-    const normalizedData = this.normalizeData(data)
+    // Process and normalize new ECG data (pass times for motion filtering)
+    const normalizedData = this.normalizeData(data, newTimes)
     this.normalizedEcg.push(...normalizedData)
     
     // Limit the size of the arrays
@@ -91,12 +142,16 @@ export default class EcgService {
     this.processForQT()
   }
   
-  normalizeData(rawData) {
-    // Apply a combination of filtering techniques to reduce noise
+  normalizeData(rawData, ecgTimes = null) {
+    // 0. Apply motion artifact filtering if enabled and accelerometer data available
+    let filteredData = rawData
+    if (this.motionFilterEnabled && this.accDataBuffer.length > 0 && ecgTimes) {
+      filteredData = this.applyMotionFilter(rawData, ecgTimes)
+    }
     
     // 1. Moving average filter to smooth the signal
     const movingAvgWindowSize = Math.max(3, Math.floor(this.samplingRate * 0.01)) // ~10ms window
-    const smoothedData = this.applyMovingAverage(rawData, movingAvgWindowSize)
+    const smoothedData = this.applyMovingAverage(filteredData, movingAvgWindowSize)
     
     // 2. Baseline correction
     // Get the last chunk of normalized data to ensure continuity
@@ -105,6 +160,61 @@ export default class EcgService {
     
     // Return only the newly processed data
     return baselineCorrected.slice(-rawData.length)
+  }
+  
+  /**
+   * Apply adaptive LMS filter to remove motion artifacts using accelerometer data
+   * @param {Array} ecgData - Raw ECG samples
+   * @param {Array} ecgTimes - Timestamps for ECG samples
+   * @returns {Array} - Filtered ECG data
+   */
+  applyMotionFilter(ecgData, ecgTimes) {
+    const filteredData = []
+    
+    for (let i = 0; i < ecgData.length; i++) {
+      const ecgSample = ecgData[i]
+      const ecgTime = ecgTimes[i]
+      
+      // Find closest accelerometer sample by time
+      const accSample = this.getAccelerometerSampleAtTime(ecgTime)
+      
+      if (accSample) {
+        // Apply LMS filter with accelerometer magnitude as noise reference
+        const filtered = this.motionFilter.filter(ecgSample, accSample.magnitude)
+        filteredData.push(filtered)
+      } else {
+        // No accelerometer data available, use original sample
+        filteredData.push(ecgSample)
+      }
+    }
+    
+    return filteredData
+  }
+  
+  /**
+   * Get accelerometer sample at specific time (with interpolation if needed)
+   * @param {number} targetTime - Target time in seconds
+   * @returns {Object|null} - Accelerometer sample or null
+   */
+  getAccelerometerSampleAtTime(targetTime) {
+    if (this.accDataBuffer.length === 0) return null
+    
+    // Find closest sample by time
+    let closestIndex = 0
+    let minTimeDiff = Math.abs(this.accDataBuffer[0].time - targetTime)
+    
+    for (let i = 1; i < this.accDataBuffer.length; i++) {
+      const timeDiff = Math.abs(this.accDataBuffer[i].time - targetTime)
+      if (timeDiff < minTimeDiff) {
+        minTimeDiff = timeDiff
+        closestIndex = i
+      }
+    }
+    
+    // If time difference is too large (>50ms), return null
+    if (minTimeDiff > 0.05) return null
+    
+    return this.accDataBuffer[closestIndex]
   }
   
   applyMovingAverage(data, windowSize) {
@@ -616,6 +726,48 @@ export default class EcgService {
   }
   
   /**
+   * Enable or disable motion artifact filtering
+   * @param {boolean} enabled - True to enable, false to disable
+   */
+  setMotionFilterEnabled(enabled) {
+    this.motionFilterEnabled = enabled
+    console.log(`EcgService: Motion filtering ${enabled ? 'enabled' : 'disabled'}`)
+    
+    // Reset filter when toggling
+    if (enabled && this.motionFilter) {
+      this.motionFilter.reset()
+    }
+  }
+  
+  /**
+   * Get motion filter statistics
+   * @returns {Object} Filter statistics
+   */
+  getMotionFilterStats() {
+    if (!this.motionFilter) return null
+    return this.motionFilter.getStats()
+  }
+  
+  /**
+   * Set accelerometer service for motion filtering
+   * @param {Object} accService - Accelerometer service instance
+   */
+  setAccelerometerService(accService) {
+    // Unsubscribe from old service
+    if (this.accSubscription) {
+      this.accSubscription.unsubscribe()
+      this.accSubscription = null
+    }
+    
+    this.accService = accService
+    
+    // Subscribe to new service
+    if (accService) {
+      this.subscribeToAccelerometer()
+    }
+  }
+  
+  /**
    * Clean up resources when no longer needed.
    */
   destroy() {
@@ -623,6 +775,12 @@ export default class EcgService {
     if (this.deviceSubscription) {
       this.deviceSubscription.unsubscribe()
       this.deviceSubscription = null
+    }
+    
+    // Unsubscribe from accelerometer
+    if (this.accSubscription) {
+      this.accSubscription.unsubscribe()
+      this.accSubscription = null
     }
     
     // Unsubscribe from RR intervals
@@ -644,6 +802,8 @@ export default class EcgService {
     this.ecgTimes = []
     this.normalizedEcg = []
     this.rrIntervals = []
+    this.accDataBuffer = []
+    this.accTimeBuffer = []
     
     // Clear the set on destroy
     this.processedRPeakIndices.clear()

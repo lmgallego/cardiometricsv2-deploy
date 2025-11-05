@@ -76,6 +76,7 @@ import CardWrapper from './CardWrapper.vue'
 import EcgChart from './EcgChart.vue'
 import themeManager from '../services/ThemeManager.js'
 import { opts } from '../services/store.js'
+import accelerometerManager from '../services/AccelerometerManager.js'
 import { computed, watch, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 // Define the duration for the real-time view
@@ -137,6 +138,7 @@ export default {
       tPeakSubscription: null,
       updateTimer: null,
       themeListener: null,
+      accListener: null, // Listener for accelerometer service updates
       initialTimestamp: null,
       pixelsPerSecond: 200,
       displayHeight: 350,
@@ -246,7 +248,25 @@ export default {
         this.cleanup();
         
         if (this.device) {
-          this.ecgService = new EcgService(this.device);
+          // Get accelerometer service from manager for motion filtering
+          const accService = accelerometerManager.getAccService();
+          
+          // Create ECG service with accelerometer service
+          this.ecgService = new EcgService(this.device, accService);
+          
+          // If accelerometer service is not available yet, listen for it
+          if (!accService) {
+            console.log('ECG: Waiting for accelerometer service...');
+            this.accListener = (newAccService) => {
+              console.log('ECG: Accelerometer service available, enabling motion filtering');
+              if (this.ecgService) {
+                this.ecgService.setAccelerometerService(newAccService);
+              }
+            };
+            accelerometerManager.addListener(this.accListener);
+          } else {
+            console.log('ECG: Accelerometer service already available, motion filtering enabled');
+          }
           
           this.ecgSubscription = this.ecgService
             .getEcgObservable()
@@ -302,6 +322,12 @@ export default {
     },
     
     cleanup() {
+      // Remove accelerometer listener
+      if (this.accListener) {
+        accelerometerManager.removeListener(this.accListener);
+        this.accListener = null;
+      }
+      
       if (this.ecgSubscription) {
         try {
           if (typeof this.ecgSubscription.unsubscribe === 'function') {

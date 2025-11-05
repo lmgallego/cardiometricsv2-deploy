@@ -48,12 +48,11 @@ export default class Acc {
     // Device subscription
     this.subscription = null
     
-    // Auto-start if device provided (TEMPORALLY DISABLED)
-    // Commented to prevent ECG interference
-    // if (device) {
-    //   // Wait a brief moment to ensure device is fully initialized
-    //   setTimeout(() => this.initialize(), 100)
-    // }
+    // Auto-start if device provided
+    if (device) {
+      // Wait for ECG to initialize first (3.5 seconds)
+      setTimeout(() => this.initialize(), 3500)
+    }
   }
   
   initialize() {

@@ -53,6 +53,7 @@ import FrequencyAnalysis from '../components/FrequencyAnalysis.vue'
 import HRVDisplay from '../components/HRVDisplay.vue'
 import ThemeToggle from '../components/ThemeToggle.vue'
 import HistoryIntervalControl from '../components/HistoryIntervalControl.vue'
+import Accelerometer from '../components/Accelerometer.vue'
 
 export default {
   name: 'WebApp',
@@ -61,7 +62,8 @@ export default {
     FrequencyAnalysis,
     HRVDisplay,
     ThemeToggle,
-    HistoryIntervalControl
+    HistoryIntervalControl,
+    Accelerometer
   },
   
   // Support for HMR

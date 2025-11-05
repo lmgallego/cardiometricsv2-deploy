@@ -12,7 +12,7 @@ const acc_range    = 0x04; //hex(2) for range of 2G - 4 and 8G available
 const acc_rate     = 0xC8; //hex(200) for sampling freqency of 200Hz
 const acc2_rate    = 416;  //0xA0;//acc2_rate=208;//26Hz, 52Hz, 104Hz, 208Hz, 416Hz
 const acc_res      = 0x10; //hex(16) 16bit resolution
-const ACC_START    = [0x02, 0x01, acc_range, 0x00, 0x00, 0x01, acc_rate, 0x00, 0x01, 0x01, acc_res, 0x00]
+const ACC_START    = new Uint8Array([0x02, 0x02, 0x00, 0x01, 0xC8, 0x00, 0x01, 0x01, 0x10, 0x00, 0x02, 0x01, 0x08, 0x00])
 
 // ECG sampling rate in Hz (from 0x00, 0x01 = 130Hz)
 const ECG_SAMPLING_RATE = 130
@@ -71,6 +71,8 @@ export default class H10 extends BaseDevice {
   constructor(connection) {
     super(connection);
     this.ecgDataReceived = false;
+    this.accDataReceived = false;
+    this.accStarted = false;
   }
 
   // Getter for ECG sampling rate
@@ -139,6 +141,11 @@ export default class H10 extends BaseDevice {
             self.ecgDataReceived = true;
           }
           
+          // Mark ACC data as received when type 2 comes in
+          if (dataType === 2) {
+            self.accDataReceived = true;
+          }
+          
           sub.next(data)
         },
       }).pipe(share())
@@ -167,6 +174,54 @@ export default class H10 extends BaseDevice {
       
     } catch (error) {
       console.error('H10: ❌ Alternative ECG command failed:', error);
+    }
+  }
+
+  // Start accelerometer stream
+  async startAccelerometer() {
+    if (this.accStarted) {
+      console.log('H10: Accelerometer already started');
+      return;
+    }
+
+    // Use mutex to prevent concurrent writes to PMD_CONTROL
+    const mutexKey = `${PMD_SERVICE}/${PMD_CONTROL}`;
+    
+    try {
+      console.log('H10: Acquiring mutex for accelerometer start...');
+      await this.mutex.lock(mutexKey);
+      
+      // Check again after acquiring mutex
+      if (this.accStarted) {
+        console.log('H10: Accelerometer already started (after mutex)');
+        this.mutex.unlock(mutexKey);
+        return;
+      }
+      
+      console.log('H10: Starting accelerometer stream...');
+      const charac = await this.fetchCharac(PMD_SERVICE, PMD_CONTROL);
+      
+      console.log('H10: Sending ACC_START command:', Array.from(ACC_START));
+      await charac.writeValue(ACC_START);
+      
+      this.accStarted = true;
+      console.log('H10: ✅ Accelerometer stream started successfully!');
+      
+      this.mutex.unlock(mutexKey);
+      
+      // Check if data starts flowing
+      setTimeout(() => {
+        if (!this.accDataReceived) {
+          console.log('H10: ⚠️ No accelerometer data received after 3 seconds');
+        } else {
+          console.log('H10: ✅ Accelerometer data is flowing properly');
+        }
+      }, 3000);
+      
+    } catch (error) {
+      this.mutex.unlock(mutexKey);
+      console.error('H10: ❌ Failed to start accelerometer stream:', error);
+      console.error('H10: Error details:', error.message, error.name);
     }
   }
 
@@ -203,6 +258,14 @@ export default class H10 extends BaseDevice {
   }
 
   observeAccelerometer() {
+    console.log('H10: observeAccelerometer called');
+    
+    // Start accelerometer stream if not already started
+    if (!this.accStarted) {
+      // Delay start to ensure PMD data observable is set up and ECG has started
+      setTimeout(() => this.startAccelerometer(), 3000);
+    }
+    
     return this.observes.acc ||= this._getPmdDataObservable().pipe(
       map(data => {
         const dataView = new DataView(data.buffer);
