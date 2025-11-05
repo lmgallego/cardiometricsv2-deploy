@@ -127,57 +127,66 @@ export default class BaseDevice {
     console.log(`observeNotifications called for service: ${service}, charac: ${charac}`)
     return new Observable(async sub => {
       let unlock = null
+      let characteristic = null
+
       try {
         console.log(`Acquiring mutex lock for ${service}/${charac}`)
         // Acquire mutex lock to prevent concurrent GATT operations
         unlock = await this.mutex.lock()
         console.log(`Mutex acquired for ${service}/${charac}`)
-        
+
         // Get the characteristic, catching and handling errors
-        const characteristic = await this.fetchCharac(service, charac)
+        characteristic = await this.fetchCharac(service, charac)
         console.log(`Characteristic fetched for ${service}/${charac}`)
-        
+
         if (init) {
           console.log(`Running init for ${service}/${charac}`)
-          await init()
+          try {
+            await init()
+          } catch (initError) {
+            log.debug(`Error in init for ${service}/${charac}:`, initError)
+            // Continue anyway - init errors may not be fatal
+          }
         }
-        
+
         // Start notifications
         console.log(`Starting notifications for ${service}/${charac}`)
         await characteristic.startNotifications()
         console.log(`Notifications started for ${service}/${charac}`)
-        
+
         // Release mutex lock after starting notifications
         if (unlock) {
           unlock()
           unlock = null
           console.log(`Mutex released for ${service}/${charac}`)
         }
-        
-        function handleNotifications(event) { 
+
+        function handleNotifications(event) {
           try {
-            handler(sub, event) 
+            handler(sub, event)
           } catch (error) {
             log.debug('Error in notification handler:', error)
-            sub.error(error)
+            // Don't call sub.error here to avoid closing the subscription on handler errors
           }
         }
-        
+
         characteristic.addEventListener('characteristicvaluechanged', handleNotifications)
         console.log(`Event listener added for ${service}/${charac}`)
-        
+
         // Return cleanup function (teardown logic)
         return {
           unsubscribe: () => {
             try {
-              if (characteristic && characteristic.properties.notify) {
+              if (characteristic && characteristic.properties && characteristic.properties.notify) {
                 // Only call stopNotifications if the characteristic is still available
                 // and has notify property
                 characteristic.stopNotifications()
                   .catch(e => log.debug('Error stopping notifications:', e))
               }
-              
-              characteristic.removeEventListener('characteristicvaluechanged', handleNotifications)
+
+              if (characteristic) {
+                characteristic.removeEventListener('characteristicvaluechanged', handleNotifications)
+              }
             } catch (e) {
               log.debug('Error in observable cleanup:', e)
             }
@@ -186,7 +195,9 @@ export default class BaseDevice {
       } catch (error) {
         // Release mutex lock if error occurred
         if (unlock) {
+          console.log(`Releasing mutex due to error for ${service}/${charac}`)
           unlock()
+          unlock = null
         }
         log.debug('Error setting up notifications:', error)
         sub.error(error)

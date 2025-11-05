@@ -18,7 +18,8 @@ export default {
   data() {
     return {
       lastRRInterval: null,
-      opts, opts,
+      opts,
+      subscription: null
     }
   },
   props: ['device'],
@@ -26,9 +27,38 @@ export default {
   watch: {
     device: {
       immediate: true,
-      handler() {
-        this.device.observeRRInterval().subscribe(rri => this.lastRRInterval = rri)
+      handler(newDevice) {
+        // Cleanup previous subscription
+        if (this.subscription) {
+          this.subscription.unsubscribe()
+          this.subscription = null
+        }
+
+        // Only subscribe if device exists and has the method
+        if (newDevice && typeof newDevice.observeRRInterval === 'function') {
+          try {
+            this.subscription = newDevice.observeRRInterval().subscribe({
+              next: (rri) => {
+                this.lastRRInterval = rri
+              },
+              error: (err) => {
+                log.debug('RRInterval: Error in RR interval subscription:', err)
+              }
+            })
+          } catch (err) {
+            log.debug('RRInterval: Error subscribing to RR interval:', err)
+          }
+        } else {
+          this.lastRRInterval = null
+        }
       }
+    }
+  },
+
+  beforeUnmount() {
+    if (this.subscription) {
+      this.subscription.unsubscribe()
+      this.subscription = null
     }
   },
 

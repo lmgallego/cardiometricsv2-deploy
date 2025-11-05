@@ -116,7 +116,8 @@ export default {
       realtimeDuration,
       maxDataPoints,
       HISTORY_LINE_HEIGHT,
-      REALTIME_DURATION_SECONDS
+      REALTIME_DURATION_SECONDS,
+      MAX_POINTS_STORED
     };
   },
   

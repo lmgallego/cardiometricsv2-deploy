@@ -11,7 +11,8 @@ import log from '@/log'
 export default {
   data() {
     return {
-      heartRate: null
+      heartRate: null,
+      subscription: null
     }
   },
   props: ['device'],
@@ -19,9 +20,38 @@ export default {
   watch: {
     device: {
       immediate: true,
-      handler() {
-        this.device.observeHeartRate().subscribe(hr => this.heartRate = hr)
+      handler(newDevice) {
+        // Cleanup previous subscription
+        if (this.subscription) {
+          this.subscription.unsubscribe()
+          this.subscription = null
+        }
+
+        // Only subscribe if device exists and has the method
+        if (newDevice && typeof newDevice.observeHeartRate === 'function') {
+          try {
+            this.subscription = newDevice.observeHeartRate().subscribe({
+              next: (hr) => {
+                this.heartRate = hr
+              },
+              error: (err) => {
+                log.debug('HeartRateMonitor: Error in heart rate subscription:', err)
+              }
+            })
+          } catch (err) {
+            log.debug('HeartRateMonitor: Error subscribing to heart rate:', err)
+          }
+        } else {
+          this.heartRate = null
+        }
       }
+    }
+  },
+
+  beforeUnmount() {
+    if (this.subscription) {
+      this.subscription.unsubscribe()
+      this.subscription = null
     }
   },
 
