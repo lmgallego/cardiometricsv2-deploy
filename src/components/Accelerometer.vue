@@ -414,6 +414,14 @@ export default {
 
       if (!this.device) return;
 
+      // TEMPORARILY DISABLED: Accelerometer initialization disabled to prevent GATT conflicts
+      // The accelerometer causes too many concurrent GATT operations which overwhelm
+      // the Bluetooth connection and cause disconnections.
+      // TODO: Re-enable with proper sequencing/delays once core functionality is stable
+      console.log('Accelerometer: Initialization skipped (temporarily disabled to prevent GATT conflicts)');
+      return;
+
+      /* DISABLED CODE - uncomment when ready to re-enable
       try {
         this.accService = new Acc(this.device);
         this.accService.setMedianWindowSeconds(this.medianWindowSeconds);
@@ -457,6 +465,7 @@ export default {
       } catch (err) {
         console.error('Accelerometer: Error initializing service:', err);
       }
+      */
     }
   },
   
