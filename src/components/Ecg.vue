@@ -137,6 +137,7 @@ export default {
       tEndSubscription: null,
       tPeakSubscription: null,
       updateTimer: null,
+      ecgInitTimer: null,  // Timer for delayed ECG initialization
       themeListener: null,
       initialTimestamp: null,
       pixelsPerSecond: 200,
@@ -245,29 +246,46 @@ export default {
       immediate: true,
       handler(newDevice, oldDevice) {
         this.cleanup();
-        
+
         if (this.device) {
-          this.ecgService = new EcgService(this.device);
-          
-          this.ecgSubscription = this.ecgService
-            .getEcgObservable()
-            .subscribe(data => this.handleEcgData(data));
-            
-          this.rPeakSubscription = this.ecgService
-            .getRPeakObservable()
-            .subscribe(data => this.handleRPeak(data));
-            
-          this.qPointSubscription = this.ecgService
-            .getQPointObservable()
-            .subscribe(data => this.handleQPoint(data));
-            
-          this.tEndSubscription = this.ecgService
-            .getTEndObservable()
-            .subscribe(data => this.handleTEnd(data));
-            
-          this.tPeakSubscription = this.ecgService
-            .getTPeakObservable()
-            .subscribe(data => this.handleTPeak(data));
+          // CRITICAL: Delay ECG initialization to prevent GATT operation conflicts
+          // ECG requires multiple GATT operations (PMD service, characteristics, writes)
+          // Delaying by 2 seconds allows HeartRate and RR Interval to initialize first
+          console.log('Ecg.vue: Scheduling delayed ECG initialization (2 seconds)');
+
+          this.ecgInitTimer = setTimeout(() => {
+            // Verify device still exists before initializing
+            if (!this.device) {
+              console.log('Ecg.vue: Device disconnected before ECG could initialize');
+              return;
+            }
+
+            console.log('Ecg.vue: Starting ECG initialization');
+            this.ecgService = new EcgService(this.device);
+
+            this.ecgSubscription = this.ecgService
+              .getEcgObservable()
+              .subscribe(data => this.handleEcgData(data));
+
+            this.rPeakSubscription = this.ecgService
+              .getRPeakObservable()
+              .subscribe(data => this.handleRPeak(data));
+
+            this.qPointSubscription = this.ecgService
+              .getQPointObservable()
+              .subscribe(data => this.handleQPoint(data));
+
+            this.tEndSubscription = this.ecgService
+              .getTEndObservable()
+              .subscribe(data => this.handleTEnd(data));
+
+            this.tPeakSubscription = this.ecgService
+              .getTPeakObservable()
+              .subscribe(data => this.handleTPeak(data));
+
+            console.log('Ecg.vue: ECG initialization complete');
+            this.ecgInitTimer = null;
+          }, 2000); // 2 second delay
         }
       }
     }
@@ -303,6 +321,12 @@ export default {
     },
     
     cleanup() {
+      // Clear pending ECG initialization timer
+      if (this.ecgInitTimer) {
+        clearTimeout(this.ecgInitTimer);
+        this.ecgInitTimer = null;
+      }
+
       if (this.ecgSubscription) {
         try {
           if (typeof this.ecgSubscription.unsubscribe === 'function') {
