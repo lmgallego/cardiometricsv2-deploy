@@ -28,9 +28,9 @@ export default class Acc {
     this.lastDataTime = 0
     this.medianWindowSeconds = 0.3
     
-    // Retry control
+    // Retry control - DISABLED to prevent GATT operation cascades
     this.retryCount = 0
-    this.maxRetries = 3
+    this.maxRetries = 0  // Set to 0 to disable auto-retry
     this.isInitializing = false
     
     // Stabilization tracking
@@ -87,7 +87,7 @@ export default class Acc {
         next: accBatch => {
           // Reset retry count on successful data reception
           this.retryCount = 0
-          
+
           if (Array.isArray(accBatch)) {
             this.accData = accBatch
           } else {
@@ -96,63 +96,18 @@ export default class Acc {
           this.processAccelerometerData()
         },
         error: (err) => {
-          console.error('Accelerometer subscription error:', err)
+          console.debug('Accelerometer subscription error (non-critical):', err.message)
           this.isInitializing = false
-          this.retryCount++
-          
-          // Only retry if under limit
-          if (this.retryCount < this.maxRetries) {
-            setTimeout(() => this.initialize(), 2000)
-          }
+          // Do not auto-retry to prevent GATT operation cascades
         }
       })
-      
+
       this.isInitializing = false
-      
-      // Set a timer to detect if we're not receiving data
-      setTimeout(() => {
-        if (this.sampleIndex === 0 && this.retryCount < this.maxRetries) {
-          this.resubscribe()
-        }
-      }, 5000) // Increased timeout to 5 seconds
     } catch (err) {
-      console.error('Accelerometer initialization error:', err)
+      console.debug('Accelerometer initialization error (non-critical):', err.message)
       this.isInitializing = false
-      this.retryCount++
-      
-      // Only retry if under limit
-      if (this.retryCount < this.maxRetries) {
-        setTimeout(() => this.initialize(), 2000)
-      }
+      // Do not auto-retry to prevent GATT operation cascades
     }
-  }
-  
-  // Handle resubscription if needed
-  resubscribe() {
-    // Check retry limit
-    if (this.retryCount >= this.maxRetries) {
-      console.warn('Accelerometer: Max retries reached in resubscribe')
-      return
-    }
-    
-    console.log('Attempting to resubscribe to accelerometer...')
-    this.retryCount++
-    
-    if (this.subscription) {
-      try {
-        if (typeof this.subscription.unsubscribe === 'function') {
-          this.subscription.unsubscribe()
-        }
-      } catch (e) {
-        // Silently handle unsubscribe errors
-        console.debug('Unsubscribe error (non-critical):', e.message)
-      } finally {
-        this.subscription = null
-      }
-    }
-    
-    // Wait a bit and try again
-    setTimeout(() => this.initialize(), 2000)
   }
   
   resetDataArrays() {

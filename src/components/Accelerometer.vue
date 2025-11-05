@@ -246,6 +246,7 @@ export default {
       themeListener: null,
       updateTimer: null,
       accService: null,
+      subscriptions: null,
       isStabilized: false,
       initialViewFixed: false
     }
@@ -382,11 +383,25 @@ export default {
     
     // Cleanup resources
     cleanup() {
+      // Unsubscribe from all subscriptions
+      if (this.subscriptions) {
+        Object.values(this.subscriptions).forEach(sub => {
+          if (sub && typeof sub.unsubscribe === 'function') {
+            try {
+              sub.unsubscribe();
+            } catch (e) {
+              console.debug('Accelerometer: Error unsubscribing:', e);
+            }
+          }
+        });
+        this.subscriptions = null;
+      }
+
       if (this.accService) {
         this.accService.destroy();
         this.accService = null;
       }
-      
+
       if (this.updateTimer) {
         clearInterval(this.updateTimer);
         this.updateTimer = null;
@@ -396,37 +411,52 @@ export default {
     // Create a new AccService and subscribe to its events
     initializeAccService() {
       this.cleanup();
-      
+
       if (!this.device) return;
-      
-      this.accService = new Acc(this.device);
-      this.accService.setMedianWindowSeconds(this.medianWindowSeconds);
-      
-      // Subscribe to all observables at once
-      const subscriptions = {
-        processed: this.accService.getProcessedDataObservable().subscribe(data => {
-          // Update time data
-          this.timeData = this.accService.timeData;
-          
-          // Update axis data using axisConfig
-          this.axisConfig.forEach(axis => {
-            this[axis.dataKey] = this.accService[axis.dataKey];
-          });
-          
-          // Update stabilization state
-          this.isStabilized = data.isStabilized ?? this.isStabilized;
-          
-          // Update Y range based on new data
-          this.updateYRange();
-        }),
-        
-        median: this.accService.getMedianDataObservable().subscribe(this.updateMedianPaths)
-      };
-      
-      // Start update timer - 20fps
-      this.updateTimer = setInterval(() => this.$forceUpdate(), 50);
-      
-      return subscriptions;
+
+      try {
+        this.accService = new Acc(this.device);
+        this.accService.setMedianWindowSeconds(this.medianWindowSeconds);
+
+        // Subscribe to all observables at once and store the subscriptions
+        this.subscriptions = {
+          processed: this.accService.getProcessedDataObservable().subscribe({
+            next: (data) => {
+              // Update time data
+              this.timeData = this.accService.timeData;
+
+              // Update axis data using axisConfig
+              this.axisConfig.forEach(axis => {
+                this[axis.dataKey] = this.accService[axis.dataKey];
+              });
+
+              // Update stabilization state
+              this.isStabilized = data.isStabilized ?? this.isStabilized;
+
+              // Update Y range based on new data
+              this.updateYRange();
+            },
+            error: (err) => {
+              console.debug('Accelerometer: Error in processed data subscription:', err);
+            }
+          }),
+
+          median: this.accService.getMedianDataObservable().subscribe({
+            next: this.updateMedianPaths,
+            error: (err) => {
+              console.debug('Accelerometer: Error in median data subscription:', err);
+            }
+          })
+        };
+
+        // Start the accelerometer service
+        this.accService.initialize();
+
+        // Start update timer - 20fps
+        this.updateTimer = setInterval(() => this.$forceUpdate(), 50);
+      } catch (err) {
+        console.error('Accelerometer: Error initializing service:', err);
+      }
     }
   },
   
