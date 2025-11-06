@@ -45,8 +45,8 @@ export default defineConfig({
     // Límites de chunks
     chunkSizeWarningLimit: 1000,
     
-    // Target para compatibilidad
-    target: 'es2015'
+    // Target para compatibilidad (ES2020 soporta BigInt)
+    target: 'es2020'
   },
   
   // Base path para subrutas (importante para deploy)
